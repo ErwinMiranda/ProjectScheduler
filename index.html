@@ -115,7 +115,6 @@
 
       /* left column header row to match timeline header height */
       .left-header {
-        height: 60px;
         padding: 10px 12px;
         box-sizing: border-box;
         border-bottom: 1px solid #eef2f6;
@@ -130,7 +129,7 @@
         display: flex;
         align-items: center;
         height: 44px;
-        padding: 8px;
+        padding: 1px;
         background: rgba(255, 255, 255, 0.9);
         border-bottom: 1px solid #eef2f6;
       }
@@ -316,17 +315,7 @@
           <div class="gantt-inner">
             <!-- LEFT column (task info) -->
             <div class="gantt-left">
-              <div
-                class="left-header"
-                style="
-                  display: flex;
-                  align-items: center;
-                  font-size: 12px;
-                  padding: 30px 12px 2px;
-                  box-sizing: border-box;
-                  gap: 16px;
-                "
-              >
+              <div class="timeline-header">
                 <div
                   style="width: 16px; color: var(--muted); text-align: center"
                 >
