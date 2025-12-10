@@ -1,4 +1,4 @@
-// deps.js
+
 import { daysBetween } from "./utils.js";
 import { tasks, scale } from "./state.js";
 
@@ -42,4 +42,4 @@ export function drawDependencies(minDate, width, rowsRight) {
   });
   rowsRight.appendChild(svg);
 }
-/ deps.js placeholder
+
