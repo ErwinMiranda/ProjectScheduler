@@ -1,4 +1,4 @@
-// app.js
+
 
 import { getDocs, onSnapshot, query, where } from "./firebase.js";
 import { addTask } from "./firebase.js";
@@ -90,4 +90,4 @@ document.getElementById("addTaskBtn").onclick = async () => {
 };
 
 refresh();
-/ app.js placeholder
+
