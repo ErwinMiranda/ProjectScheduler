@@ -1,4 +1,4 @@
-// renderer.js
+
 import { daysBetween, addDays, formatDate } from "./utils.js";
 import { tasks, scale } from "./state.js";
 import { drawDependencies } from "./deps.js";
@@ -82,4 +82,4 @@ export function render(taskLeftList, rowsRight, timelineHeader, depOverlay, minD
 
     enableDurationEditing(taskLeftList);
 }
-/ renderer.js placeholder
+
