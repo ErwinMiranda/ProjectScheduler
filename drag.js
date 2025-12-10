@@ -1,4 +1,4 @@
-// drag.js
+
 import { daysBetween, addDays } from "./utils.js";
 import { tasks, scale } from "./state.js";
 import { saveTask } from "./firebase.js";
@@ -63,4 +63,4 @@ export function makeDraggable(el){
         await saveTask(t);
     }
 }
-/ drag.js placeholder
+
