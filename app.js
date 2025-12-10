@@ -1,5 +1,5 @@
 
-
+import { loadWOList } from "./woLoader.js";
 import { getDocs, onSnapshot, query, where } from "./firebase.js";
 import { addTask } from "./firebase.js";
 import { tasksCol } from "./firebase.js";
@@ -55,6 +55,7 @@ woFilter.addEventListener("change", async e=>{
   const wo=e.target.value;
   if(!wo){
     updateTaskList([]);
+    loadWOList();
     refresh();
     return;
   }
