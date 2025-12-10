@@ -1,4 +1,4 @@
-// edit.js
+
 import { daysBetween, addDays } from "./utils.js";
 import { tasks } from "./state.js";
 import { saveTask } from "./firebase.js";
@@ -32,4 +32,4 @@ export function enableDurationEditing(taskLeftList){
         };
     });
 }
-/ edit.js placeholder
+
