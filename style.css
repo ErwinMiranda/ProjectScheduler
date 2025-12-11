@@ -65,7 +65,7 @@ input[type="date"] {
   background: white;
 }
 
-/* GANTT area: single scroll container */
+/* GANTT area container */
 .gantt-panel {
   display: flex;
   flex: 1 1 auto;
@@ -86,7 +86,7 @@ input[type="date"] {
   min-height: 0;
 }
 
-/* Left column (task info) */
+/* Left column */
 .gantt-left {
   width: var(--left-width);
   min-width: var(--left-width);
@@ -97,7 +97,7 @@ input[type="date"] {
   flex-direction: column;
 }
 
-/* Right column (timeline) */
+/* Timeline */
 .gantt-right {
   flex: 1 1 auto;
   min-width: 600px;
@@ -107,15 +107,6 @@ input[type="date"] {
   background: transparent;
 }
 
-/* left column header row to match timeline header height */
-.left-header {
-  padding: 10px 12px;
-  box-sizing: border-box;
-  border-bottom: 1px solid #eef2f6;
-  background: #fff;
-}
-
-/* timeline header (inside right column) */
 .timeline-header {
   position: sticky;
   top: 0;
@@ -128,19 +119,17 @@ input[type="date"] {
   border-bottom: 1px solid #eef2f6;
 }
 
-/* rows container */
+/* Rows */
 .rows-container {
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
 
-/* each unified row */
 .unified-row {
   display: flex;
   align-items: center;
   min-height: var(--row-height);
-  padding: 0;
   box-sizing: border-box;
   border-bottom: 1px dashed #f1f5f9;
   background: white;
@@ -152,7 +141,6 @@ input[type="date"] {
   padding-bottom: 4px;
 }
 
-/* left cell content inside unified row */
 .row-left {
   width: var(--left-width);
   min-width: var(--left-width);
@@ -186,39 +174,31 @@ input[type="date"] {
 }
 
 .task-dur {
-  align-items: right;
-  justify-content: flex-start;
   padding-left: 8px;
   font-size: 12px;
   color: var(--muted);
-  box-sizing: border-box;
 }
 
-/* Fix inline duration editor input alignment */
 .task-dur input {
   height: 24px;
-  line-height: 24px;
   padding: 0 4px;
-  margin: 0;
   border: 1px solid #d1d5db;
   border-radius: 4px;
   font-size: 12px;
-  box-sizing: border-box;
   width: 40px;
 }
 
-/* right cell of unified row: the per-row grid area */
+/* Right rows */
 .row-right {
   flex: 1;
-  min-width: 0;
   position: relative;
-  box-sizing: border-box;
 }
 
 .row-grid {
   width: 100%;
   height: 100%;
   min-height: var(--row-height);
+  position: relative;
 }
 
 .grid-back {
@@ -232,9 +212,11 @@ input[type="date"] {
     transparent var(--scale)
   );
   background-color: var(--grid-bg);
+  z-index: 1;
 }
 
 .bar {
+  z-index: 5;
   position: absolute;
   height: var(--bar-height);
   border-radius: 6px;
@@ -243,17 +225,7 @@ input[type="date"] {
   display: flex;
   align-items: center;
   padding-right: 6px;
-  box-sizing: border-box;
   cursor: grab;
-}
-
-.bar .label {
-  position: absolute;
-  left: 6px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: calc(100% - 20px);
 }
 
 .bar .handle {
@@ -262,14 +234,34 @@ input[type="date"] {
   cursor: ew-resize;
 }
 
-/* dependency overlay spanning right column (SVG placed here) */
+/* Floating label */
+.bar-label-after {
+  position: absolute;
+  font-size: 12px;
+  color: #0c2868;
+  white-space: nowrap;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 6px;
+  pointer-events: none;
+  z-index: 2;
+  background: white;
+  padding: 2px 4px;
+}
+
+/* Selected styling */
+.bar.selected {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
+}
+
 .dep-overlay {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-/* add-task area at bottom */
 .add-task-panel {
   padding: 12px;
 }
@@ -284,4 +276,16 @@ input[type="date"] {
   .gantt-left {
     display: none;
   }
+}
+/* ---------- Drag highlight styles ---------- */
+
+/* Highlight a day cell in the header during drag */
+#timelineHeader .day-cell.day-highlight {
+  background: rgb(226, 75, 75) !important;
+}
+
+/* Highlight the left index number for the target row */
+#taskLeftList .index.index-highlight {
+  color: #d10531 !important;
+  font-weight: 900 !important;
 }
