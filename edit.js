@@ -1,55 +1,100 @@
-// edit.js — Inline duration editor logic
-
-import { daysBetween, addDays } from "./utils.js";
+// edit.js — inline duration editing for left-panel task cells
+import { pushHistory } from "./state.js";
 import { tasks } from "./state.js";
+import { addDays, daysBetween } from "./utils.js";
 import { saveTask } from "./firebase.js";
-import { applyDependencies, refresh } from "./app.js";
+import { applyDependencies } from "./app.js";
+import { render } from "./renderer.js";
+
+// edit task name
+export function attachTitleEditing() {
+  document.querySelectorAll(".task-title").forEach((cell) => {
+    cell.ondblclick = () => {
+      const id = cell.parentElement.querySelector(".task-dur").dataset.id;
+      const task = tasks.find((t) => t.id === id);
+
+      if (!task || cell.querySelector("input")) return;
+
+      const current = task.title;
+
+      cell.innerHTML = `<input type="text" value="${current}" />`;
+
+      const input = cell.querySelector("input");
+      input.focus();
+      input.select();
+
+      const commit = async () => {
+        const value = input.value.trim();
+        if (!value) {
+          render();
+          return;
+        }
+
+        pushHistory();
+        task.title = value;
+        render();
+
+        try {
+          await saveTask(task);
+        } catch (err) {
+          console.error("Failed to update task title:", err);
+        }
+      };
+
+      input.addEventListener("blur", commit, { once: true });
+
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") input.blur();
+        if (e.key === "Escape") render();
+      });
+    };
+  });
+}
 
 /**
- * Enables click-to-edit duration feature on left task rows
+ * Attach click-to-edit behavior to duration cells
  */
-export function enableDurationEditing(taskLeftList) {
+export function attachDurationEditing() {
+  document.querySelectorAll(".task-dur").forEach((cell) => {
+    cell.onclick = () => {
+      const id = cell.dataset.id;
+      const task = tasks.find((t) => t.id === id);
 
-    taskLeftList.querySelectorAll(".task-dur").forEach(cell => {
+      if (!task || cell.querySelector("input")) return;
 
-        cell.onclick = () => {
-            const id = cell.dataset.id;
-            const t = tasks.find(x => x.id === id);
+      const current = daysBetween(task.start, task.end) + 1;
 
-            // Already editing or no task → ignore
-            if (!t || cell.querySelector("input")) return;
+      // Build small number input
+      cell.innerHTML = `<input type="number" min="1" value="${current}" />`;
 
-            const cur = daysBetween(t.start, t.end) + 1;
+      const input = cell.querySelector("input");
+      input.focus();
+      input.select();
 
-            // Replace text with input field
-            cell.innerHTML = `<input type="number" min="1" value="${cur}">`;
+      const commit = async () => {
+        const v = Math.max(1, Number(input.value));
 
-            const input = cell.querySelector("input");
-            input.focus();
-            input.select();
+        // Compute new end date based on duration
+        pushHistory();
+        task.end = addDays(task.start, v - 1);
 
-            const commit = async () => {
-                const val = Math.max(1, Number(input.value));
+        applyDependencies();
+        render();
 
-                // Update end date based on new duration
-                t.end = addDays(t.start, val - 1);
+        try {
+          await saveTask(task);
+        } catch (err) {
+          console.error("Failed to update duration:", err);
+        }
+      };
 
-                applyDependencies();
-                refresh();
+      // finalize edit
+      input.addEventListener("blur", commit, { once: true });
 
-                try {
-                    await saveTask(t);
-                } catch (e) {
-                    console.error("Update failed:", e);
-                }
-            };
-
-            // Commit on blur or Enter
-            input.addEventListener("blur", commit, { once: true });
-            input.addEventListener("keydown", e => {
-                if (e.key === "Enter") input.blur();
-                if (e.key === "Escape") refresh();
-            });
-        };
-    });
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") input.blur();
+        if (e.key === "Escape") render();
+      });
+    };
+  });
 }
