@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>ProjSched — Scheduler & Dependencies</title>
+
+    <!-- external stylesheet -->
+    <link rel="stylesheet" href="style.css" />
+  </head>
+
+  <body>
+    <div class="app">
+      <!-- Header -->
+      <div class="panel header-panel">
+        <div class="header-left">
+          <div class="title">
+            Project Schedule for
+            <span id="acRegLabel">AC REG</span>
+            <span id="unsavedMark" class="unsaved-mark" hidden>*</span>
+          </div>
+
+          <div class="header-subline">
+            <span class="header-hint">Select a WO to load its tasks</span>
+
+            <!-- TAT DISPLAY -->
+            <span id="tatDisplay" class="tat-badge"> TAT: — </span>
+          </div>
+        </div>
+
+        <div class="header-controls">
+          <select id="woFilter" style="min-width: 220px">
+            <option value="">Select Work Order</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- GANTT unified panel -->
+      <div
+        class="panel gantt-panel"
+        style="display: flex; flex-direction: column; flex: 1; min-height: 0"
+      >
+        <div class="gantt-scroll" id="ganttScroll">
+          <div class="gantt-inner">
+            <!-- Left column -->
+            <div class="gantt-left">
+              <div class="timeline-header">
+                <div
+                  style="width: 16px; color: var(--muted); text-align: center"
+                >
+                  #
+                </div>
+                <div
+                  style="flex: 1; min-width: 0; color: #111; padding-left: 4px"
+                >
+                  Task Name
+                </div>
+                <div
+                  style="width: 50px; text-align: center; color: var(--muted)"
+                >
+                  Dur
+                </div>
+                <div
+                  style="width: 165px; text-align: center; color: var(--muted)"
+                >
+                  Start → End
+                </div>
+              </div>
+              <div id="taskLeftList" class="rows-container"></div>
+            </div>
+
+            <!-- Right column -->
+            <div class="gantt-right">
+              <div id="timelineHeader" class="timeline-header"></div>
+              <div
+                id="rowsRight"
+                class="rows-container"
+                style="position: relative"
+              ></div>
+              <div id="depOverlay" class="dep-overlay"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ADD TASK -->
+      <div class="panel add-task-panel">
+        <div class="add-task">
+          <input id="newTitle" type="text" placeholder="Task name" />
+          <input id="newStart" type="date" />
+          <input id="newEnd" type="date" />
+          <select id="newDepends">
+            <option value="">No dependency</option>
+          </select>
+          <button id="addTaskBtn" class="btn">Add</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- external JS -->
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
