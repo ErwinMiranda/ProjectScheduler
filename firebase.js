@@ -9,6 +9,7 @@ import {
   updateDoc,
   getDocs,
   onSnapshot,
+  deleteDoc,
   query,
   where,
   serverTimestamp,
@@ -61,11 +62,13 @@ export async function saveTask(task) {
     start: task.start.toISOString(),
     end: task.end.toISOString(),
     depends: task.depends || "",
+    depType: task.depType || "FS", // ✅ ADD
     row: task.row || 0,
     lagDays: Number(task.lagDays) || 0,
     leadDays: Number(task.leadDays) || 0,
     taskno: task.taskno || Date.now(),
     updatedAt: serverTimestamp(),
+    color: t.color || "",
   });
 }
 
@@ -91,6 +94,7 @@ export function listenTasksByWO(wo, callback) {
         lagDays: Number.isFinite(data.lagDays) ? data.lagDays : 0,
         leadDays: Number.isFinite(data.leadDays) ? data.leadDays : 0,
         taskno: data.taskno || 0,
+        color: data.color || "",
       };
     });
 
@@ -117,11 +121,18 @@ export async function fetchTasksByWOOnce(wo) {
       title: data.title || "",
       start: new Date(data.start),
       end: new Date(data.end),
+
+      duration:
+        data.duration ||
+        Math.round((new Date(data.end) - new Date(data.start)) / 86400000) + 1,
+
       depends: data.depends || "",
+      depType: data.depType || "FS",
       row: data.row || 0,
       lagDays: Number.isFinite(data.lagDays) ? data.lagDays : 0,
       leadDays: Number.isFinite(data.leadDays) ? data.leadDays : 0,
       taskno: data.taskno || 0,
+      color: data.color || "",
     };
   });
 
@@ -136,13 +147,16 @@ export async function batchSaveTasks(taskArray) {
   const results = {
     updated: 0,
     created: 0,
-    createdMap: {},
+    createdMap: {}, // local index → Firestore ID
   };
 
   for (let i = 0; i < taskArray.length; i++) {
     const t = taskArray[i];
 
-    // validate
+    const duration =
+      t.duration ||
+      Math.round((new Date(t.end) - new Date(t.start)) / 86400000) + 1;
+
     const payload = {
       wo: t.wo || "",
       acreg: t.acreg || "",
@@ -151,34 +165,38 @@ export async function batchSaveTasks(taskArray) {
         t.start instanceof Date
           ? t.start.toISOString()
           : new Date(t.start).toISOString(),
-
       end:
         t.end instanceof Date
           ? t.end.toISOString()
           : new Date(t.end).toISOString(),
-
+      duration,
       depends: t.depends || "",
-      row: Number(t.row) || 0,
+      depType: t.depType || "FS",
       lagDays: Number(t.lagDays) || 0,
       leadDays: Number(t.leadDays) || 0,
+      row: Number(t.row) || 0,
       taskno: t.taskno || Date.now(),
+      color: t.color || "",
       updatedAt: serverTimestamp(),
     };
 
     try {
       const isLocal = String(t.id || "").startsWith("local-");
-      if (!t.id) {
-        throw new Error("Task missing id during save");
-      }
-      if (!isLocal && t.id) {
-        // ✅ Existing Firestore document → UPDATE
+
+      if (!t.id) throw new Error("Task missing id during save");
+
+      if (!isLocal) {
+        // Existing task → UPDATE
         await updateDoc(doc(db, "tasks", t.id), payload);
         results.updated++;
       } else {
-        // ✅ Local-only task → CREATE
+        // Local-only → CREATE
         const newRef = await addDoc(tasksCol, payload);
         results.created++;
         results.createdMap[i] = newRef.id;
+
+        // ✅ Replace local ID with Firestore ID
+        t.id = newRef.id;
       }
     } catch (err) {
       console.error("Error in batchSaveTasks @ index", i, err);
@@ -207,4 +225,31 @@ export async function fetchUniqueWOList() {
     wo,
     acreg,
   }));
+}
+
+/* -------------------------------------------
+   Save as Templtes
+-------------------------------------------- */
+export async function saveTemplateToFirestore(name, desc, tasks) {
+  return addDoc(collection(db, "templates"), {
+    name,
+    desc,
+    tasks,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+export async function loadAllTemplates() {
+  const snap = await getDocs(collection(db, "templates"));
+  const list = [];
+  snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
+  return list;
+}
+/* -------------------------------------------
+   DELETE Task (REQUIRED)
+-------------------------------------------- */
+export async function deleteTaskFromFirestore(taskId) {
+  if (!taskId) return;
+  const ref = doc(db, "tasks", taskId);
+  await deleteDoc(ref);
 }
