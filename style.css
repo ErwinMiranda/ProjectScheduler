@@ -111,9 +111,9 @@ input[type="date"] {
   position: sticky;
   top: 0;
   z-index: 50;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  height: 44px;
+  min-height: 44px;
   padding: 1px;
   background: #fff;
   border-bottom: 1px solid #eef2f6;
@@ -144,25 +144,26 @@ input[type="date"] {
 .row-left {
   width: var(--left-width);
   min-width: var(--left-width);
-  padding: 0 12px;
+  padding: 0 5px;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
   box-sizing: border-box;
 }
 
 .index {
   color: var(--muted);
+  width: 20px;
 }
 
 .task-title {
-  flex: 1;
-  min-width: 0;
+  width: 180px;
   font-size: 12px;
   white-space: normal;
   overflow-wrap: break-word;
   line-height: 1.3;
   padding: 5px 0;
+  cursor: pointer;
 }
 
 .task-dates {
@@ -174,9 +175,11 @@ input[type="date"] {
 }
 
 .task-dur {
-  padding-left: 8px;
+  padding-left: 2px;
   font-size: 12px;
   color: var(--muted);
+  cursor: pointer;
+  width: 50px;
 }
 
 .task-dur input {
@@ -403,4 +406,238 @@ input[type="date"] {
   margin-left: 4px;
   color: #dc2626; /* subtle red */
   font-weight: 600;
+}
+.bar {
+  box-sizing: border-box;
+}
+/* ============================================================
+   MODERN GLASS MODAL (FADE + SCALE ANIMATION)
+============================================================ */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  display: none; /* default = hidden */
+  align-items: center;
+  justify-content: center;
+  z-index: 5000;
+  opacity: 0;
+  transform: scale(0.98);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+/* When modal is shown (hidden removed), animate in */
+.modal:not([hidden]) {
+  display: flex;
+  opacity: 1;
+  transform: scale(1);
+}
+
+.modal-content {
+  background: #ffffff;
+  padding: 28px;
+  width: 740px !important;
+  max-width: 95%;
+  border-radius: 14px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  animation: modalPop 0.22s ease;
+}
+
+@keyframes modalPop {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.modal-content h3 {
+  margin: 0 0 18px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+}
+/* Inputs spacing */
+.modal-content label {
+  display: block;
+  margin-top: 16px;
+  font-size: 13px;
+  color: #475569;
+}
+.modal-content input {
+  width: 100%;
+  margin-top: 6px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 13px;
+}
+
+/* Task Table inside modal */
+#taskTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 14px;
+}
+
+/* Reduce table crowding */
+#taskTable th {
+  font-size: 12px;
+  font-weight: 500;
+  padding-bottom: 6px;
+  color: #94a3b8;
+}
+#taskTable td input {
+  width: 100%;
+  padding: 6px 8px;
+}
+#taskTable td {
+  border-bottom: 1px solid #f1f5f9;
+  padding: 6px 0;
+}
+
+/* Bottom buttons */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+.btn.primary {
+  background: #2563eb;
+  color: #fff;
+  font-weight: 500;
+}
+
+.btn.small {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+/* Modern floating button */
+.btn-create-project {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.btn-create-project span {
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: -1px;
+}
+
+.btn-create-project:hover {
+  background: #1d4ed8;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+}
+
+.btn-create-project:active {
+  transform: scale(0.97);
+}
+/* Task row container */
+.task-row {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 32px;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.task-row input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid #d1d5e1;
+  font-size: 13px;
+  background: white;
+  box-sizing: border-box;
+}
+
+.task-row .delete-row {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: 0.15s ease;
+}
+
+.task-row .delete-row:hover {
+  color: #ef4444;
+}
+
+/* Header spacing */
+#taskTable th {
+  padding-bottom: 6px;
+  text-align: left;
+  font-size: 12px;
+  color: #64748b;
+}
+.task-header {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 32px;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+.task-scroll {
+  max-height: 400px; /* adjust height you want */
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px; /* avoids content touching scrollbar */
+  border: 1px solid #eee;
+  border-radius: 6px;
+  background: #fafafa;
+  margin-bottom: 10px;
+  margin-top: 10px;
+}
+.task-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.task-scroll::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.task-scroll::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 10px;
+}
+.task-delete {
+  background: #dc5e5e;
+  color: white;
+  font-size: 10px;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  border-radius: 50%;
+  border: none;
+}
+.task-insert {
+  background: #22c55e;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  font-size: 10px;
+  cursor: pointer;
+  width: 20px;
+  height: 20px;
 }
