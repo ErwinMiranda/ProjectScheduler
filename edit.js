@@ -74,10 +74,25 @@ export function attachDurationEditing() {
         const v = Math.max(1, Number(input.value));
 
         pushHistory();
-        task.end = addDays(task.start, v - 1);
 
-        applyDependencies();
-        render();
+        const oldEnd = task.end;
+        const newEnd = addDays(task.start, v - 1);
+
+        const deltaDays = daysBetween(oldEnd, newEnd);
+
+        task.end = newEnd;
+
+        // ✅ Cascade only if duration increased
+        if (deltaDays !== 0) {
+          import("./app.js").then((m) => {
+            m.shiftChildren(task.id, deltaDays);
+            applyDependencies();
+            render();
+          });
+        } else {
+          applyDependencies();
+          render();
+        }
 
         // 🔥 LOCAL UPDATE ONLY — no Firestore write yet
         window.dispatchEvent(new CustomEvent("localchange"));
