@@ -210,7 +210,10 @@ export function makeDraggable(el) {
     const deltaDays = Math.round((task.start - oldStart) / 86400000);
 
     if (deltaDays !== 0) {
-      await import("./app.js").then((m) => m.shiftChildren(task.id, deltaDays));
+      await import("./app.js").then((m) =>
+        m.shiftChildren(task.id, deltaDays, { force: true })
+      );
+
       window.dispatchEvent(new CustomEvent("localchange"));
     }
 
