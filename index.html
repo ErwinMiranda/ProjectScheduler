@@ -32,6 +32,10 @@
           <select id="woFilter" style="min-width: 220px">
             <option value="">Select Work Order</option>
           </select>
+          <button id="newProjectBtn" class="btn-create-project">
+            <span>＋</span> New Project
+          </button>
+          <button id="saveTemplateBtn" class="btn">Save as Template</button>
         </div>
       </div>
 
@@ -46,13 +50,36 @@
             <div class="gantt-left">
               <div class="timeline-header">
                 <div
-                  style="width: 16px; color: var(--muted); text-align: center"
+                  style="
+                    width: 40px;
+                    color: #111;
+                    padding-left: 4px;
+                    text-align: center;
+                  "
+                >
+                  Add
+                </div>
+                <div
+                  style="
+                    width: 40px;
+                    color: #111;
+                    padding-left: 4px;
+                    text-align: center;
+                  "
+                >
+                  Del
+                </div>
+                <div
+                  style="
+                    width: 20px;
+                    color: #111;
+                    padding-left: 4px;
+                    text-align: center;
+                  "
                 >
                   #
                 </div>
-                <div
-                  style="flex: 1; min-width: 0; color: #111; padding-left: 4px"
-                >
+                <div style="width: 120px; color: #111; padding-left: 4px">
                   Task Name
                 </div>
                 <div
@@ -93,6 +120,78 @@
             <option value="">No dependency</option>
           </select>
           <button id="addTaskBtn" class="btn">Add</button>
+        </div>
+      </div>
+    </div>
+    <!-- NEW PROJECT MODAL -->
+    <div id="projectModal" class="modal" hidden>
+      <div class="modal-content">
+        <h3>Create New Project</h3>
+
+        <label>Work Order (WO)</label>
+        <input type="text" id="newWO" placeholder="e.g., WO-5001" />
+
+        <label>AC REG</label>
+        <input type="text" id="newACREG" placeholder="e.g., RP-C919" />
+        <label>Use Template</label>
+        <select id="loadTemplateSelect">
+          <option value="">None</option>
+        </select>
+        <div class="task-scroll">
+          <h4 style="margin: 22px 0 8px; font-size: 14px; color: #334155">
+            Initial Tasks
+          </h4>
+          <div class="task-header">
+            <div>Task Name</div>
+            <div>Start</div>
+            <div>End</div>
+            <div></div>
+          </div>
+
+          <div id="taskRows"></div>
+        </div>
+        <button id="addTaskRowBtn" class="btn small">Add Row</button>
+
+        <div class="modal-actions">
+          <button id="cancelProjectBtn" class="btn">Cancel</button>
+          <button id="createProjectBtn" class="btn primary">
+            Create Project
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- SAVE TEMPLATE MODAL -->
+    <div id="saveTemplateModal" class="modal" hidden>
+      <div class="modal-content" style="width: 420px">
+        <h3>Save as Template</h3>
+        <label>Template Name</label>
+        <input
+          type="text"
+          id="templateName"
+          placeholder="e.g., C-Check Template"
+        />
+        <label>Description (optional)</label>
+        <textarea
+          id="templateDesc"
+          rows="3"
+          placeholder="Short description"
+        ></textarea>
+        <div class="modal-actions">
+          <button id="cancelTemplateBtn" class="btn">Cancel</button>
+          <button id="confirmSaveTemplate" class="btn primary">
+            Save Template
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- TEMPLATE START DATE MODAL -->
+    <div id="templateStartDateModal" class="modal" hidden>
+      <div class="modal-content small">
+        <h3>Select Project Start Date</h3>
+        <input type="date" id="templateStartDate" />
+        <div class="modal-actions">
+          <button id="cancelStartDateBtn" class="btn">Cancel</button>
+          <button id="confirmStartDateBtn" class="btn primary">OK</button>
         </div>
       </div>
     </div>
