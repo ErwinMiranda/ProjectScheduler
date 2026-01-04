@@ -8,7 +8,9 @@ import { drawDeps } from "./deps.js";
 import { makeDraggable, makeLeftRowDraggable } from "./drag.js";
 import { attachDurationEditing, attachTitleEditing } from "./edit.js";
 import { pushHistory } from "./state.js";
-
+import { showCriticalPath } from "./state.js";
+import { computeCriticalPath } from "./utils.js";
+import { deleteTask, insertTaskBelow } from "./app.js";
 let scale = 36;
 
 /* --------------------------------------------------------------------------
@@ -46,6 +48,17 @@ function ensureTooltip() {
   return tip;
 }
 
+const LAST_COLOR_KEY = "lastBarColor";
+const DEFAULT_BAR_COLOR = "#2563eb";
+
+function getLastUsedColor() {
+  return localStorage.getItem(LAST_COLOR_KEY) || DEFAULT_BAR_COLOR;
+}
+
+function setLastUsedColor(color) {
+  localStorage.setItem(LAST_COLOR_KEY, color);
+}
+
 function openDependencyEditor(task, anchorEl, clientX, clientY) {
   document.querySelector(".dep-editor")?.remove();
 
@@ -67,6 +80,19 @@ function openDependencyEditor(task, anchorEl, clientX, clientY) {
       <input type="number" min="0" value="${task.leadDays || 0}">
     </label>
 
+    <label>
+      Type
+      <select class="dep-type">
+        <option value="FS">Finish → Start</option>
+        <option value="SS">Start → Start</option>
+      </select>
+    </label>
+
+    <label>
+      Bar color
+      <input type="color" class="bar-color" />
+    </label>
+
     <div class="net">Net: 0 days</div>
 
     <div class="actions">
@@ -77,12 +103,19 @@ function openDependencyEditor(task, anchorEl, clientX, clientY) {
 
   document.body.appendChild(editor);
 
-  // ✅ CLAMP TO VIEWPORT
+  // Position safely
   positionContextMenu(editor, clientX, clientY);
 
   const lagInput = editor.querySelectorAll("input")[0];
   const leadInput = editor.querySelectorAll("input")[1];
+  const typeSelect = editor.querySelector(".dep-type");
+  const colorInput = editor.querySelector(".bar-color");
   const netEl = editor.querySelector(".net");
+
+  // Load last used color
+  colorInput.value = getLastUsedColor();
+
+  typeSelect.value = task.depType || "FS";
 
   const updateNet = () => {
     const lag = Number(lagInput.value) || 0;
@@ -102,6 +135,11 @@ function openDependencyEditor(task, anchorEl, clientX, clientY) {
 
     task.lagDays = Math.max(0, Number(lagInput.value) || 0);
     task.leadDays = Math.max(0, Number(leadInput.value) || 0);
+    task.depType = typeSelect.value;
+    task.color = colorInput.value;
+
+    // Persist chosen color globally
+    setLastUsedColor(task.color);
 
     window.dispatchEvent(new CustomEvent("localchange"));
 
@@ -112,7 +150,7 @@ function openDependencyEditor(task, anchorEl, clientX, clientY) {
     editor.remove();
   };
 
-  // ESC + click outside to close
+  // Close on ESC or outside click
   const close = (e) => {
     if (
       e.key === "Escape" ||
@@ -161,9 +199,9 @@ export function render() {
   rowsRight.innerHTML = "";
   timelineHeader.innerHTML = "";
   depOverlay.innerHTML = "";
-
+  const criticalSet = showCriticalPath ? computeCriticalPath(tasks) : null;
   buildTimelineHeader(timelineHeader, minD, totalDays);
-  buildRows(taskLeftList, rowsRight, minD, width);
+  buildRows(taskLeftList, rowsRight, minD, width, criticalSet);
 
   requestAnimationFrame(() => {
     syncRowHeights(taskLeftList, rowsRight);
@@ -263,7 +301,7 @@ function buildTimelineHeader(timelineHeader, minDate, totalDays) {
 /* --------------------------------------------------------------------------
    Build LEFT + RIGHT rows including bars and floating labels
 ----------------------------------------------------------------------------*/
-function buildRows(taskLeftList, rowsRight, minDate, width) {
+function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
   const barH =
     parseInt(
       getComputedStyle(document.documentElement).getPropertyValue(
@@ -279,20 +317,51 @@ function buildRows(taskLeftList, rowsRight, minDate, width) {
     leftRow.className = "unified-row";
 
     leftRow.innerHTML = `
-      <div class="row-left">
-        <div class="index">${idx + 1}</div>
-        <div class="task-title">${escapeHtml(task.title)}</div>
-        <div class="task-dur" data-id="${task.id}">
-          <span>${daysBetween(task.start, task.end) + 1}d</span>
-        </div>
-        <div class="task-dates">${formatDate(task.start)} → ${formatDate(
-      task.end
-    )}</div>
-      </div>
-    `;
+    
+  <div class="row-left">
+  <button class="task-insert" title="Insert task below">+</button>
+  <button class="task-delete" title="Delete task">x</button>
+    <div class="index">${idx + 1}</div>
+
+    <div class="task-title">${escapeHtml(task.title)}</div>
+
+    <div class="task-dur" data-id="${task.id}">
+      <span>${daysBetween(task.start, task.end) + 1}d</span>
+    </div>
+
+    <div class="task-dates">
+      ${formatDate(task.start)} → ${formatDate(task.end)}
+    </div>
+  </div>
+`;
 
     taskLeftList.appendChild(leftRow);
     makeLeftRowDraggable(leftRow, task.id);
+    const delBtn = leftRow.querySelector(".task-delete");
+    const insBtn = leftRow.querySelector(".task-insert");
+
+    [delBtn, insBtn].forEach((btn) => {
+      btn.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    });
+    insBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      insertTaskBelow(task);
+    });
+
+    // ✅ ACTUAL DELETE
+    delBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      deleteTask(task.id);
+    });
 
     /* ---------------- RIGHT ROW ---------------- */
     const rightRow = document.createElement("div");
@@ -312,6 +381,11 @@ function buildRows(taskLeftList, rowsRight, minDate, width) {
     /* ---------------- BAR ---------------- */
     const bar = document.createElement("div");
     bar.className = "bar";
+    if (task.color) {
+      bar.style.borderColor = task.color;
+      bar.style.backgroundColor = task.color;
+    }
+
     bar.dataset.id = task.id;
 
     const leftDays = daysBetween(minDate, task.start);
@@ -328,6 +402,11 @@ function buildRows(taskLeftList, rowsRight, minDate, width) {
 
     if (selectedBars.has(task.id)) {
       bar.classList.add("selected");
+    }
+    if (showCriticalPath && criticalSet && criticalSet.has(task.id)) {
+      bar.style.border = "3px solid #dc2626";
+    } else {
+      bar.style.border = "none";
     }
 
     /* ---------------- LABEL AFTER BAR ---------------- */
@@ -354,24 +433,44 @@ function buildRows(taskLeftList, rowsRight, minDate, width) {
       }
 
       const parent = tasks.find((x) => x.id === t.depends);
+
       const lag = Number.isFinite(t.lagDays) ? t.lagDays : 0;
       const lead = Number.isFinite(t.leadDays) ? t.leadDays : 0;
-      const offset = lag - lead;
+      const net = lag - lead;
+
+      const depType = t.depType || "FS";
+      const depLabel = depType === "SS" ? "Start → Start" : "Finish → Start";
 
       tooltip.innerHTML = `
-        <div style="font-weight:600; margin-bottom:6px;">${escapeHtml(
-          t.title
-        )}</div>
-        <div style="font-size:12px; color:#334155">
-          Depends on: <strong>${
-            parent ? escapeHtml(parent.title) : "—"
-          }</strong><br/>
-          Type: FS (Finish→Start)<br/>
-          Lead: ${lead} day(s)<br/>
-          Lag: ${lag} day(s)<br/>
-          Net offset: ${offset >= 0 ? "+" : ""}${offset} day(s)
-        </div>
-      `;
+    <div style="font-weight:600; margin-bottom:6px;">
+      ${escapeHtml(t.title)}
+    </div>
+
+    <div style="font-size:12px; color:#334155; line-height:1.4">
+      <div>
+        <span style="color:#64748b">Depends on:</span>
+        <strong>${parent ? escapeHtml(parent.title) : "—"}</strong>
+      </div>
+
+      <div>
+        <span style="color:#64748b">Dependency:</span>
+        <strong>${depType}</strong>
+        <span style="color:#64748b">(${depLabel})</span>
+      </div>
+
+      <div>
+        <span style="color:#64748b">Lag:</span> ${lag} day(s)
+        &nbsp;•&nbsp;
+        <span style="color:#64748b">Lead:</span> ${lead} day(s)
+      </div>
+
+      <div>
+        <span style="color:#64748b">Net offset:</span>
+        <strong>${net >= 0 ? "+" : ""}${net}</strong> day(s)
+      </div>
+    </div>
+  `;
+
       tooltip.style.opacity = "1";
     });
 
