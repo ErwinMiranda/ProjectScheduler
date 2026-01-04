@@ -17,6 +17,7 @@ export function updateTaskList(list) {
     row: typeof t.row === "number" ? t.row : 0,
     lagDays: Number.isFinite(t.lagDays) ? t.lagDays : 0,
     leadDays: Number.isFinite(t.leadDays) ? t.leadDays : 0,
+    color: t.color || "",
   }));
 }
 
@@ -123,4 +124,9 @@ export function commitBaselineFromFirestore(list) {
     start: new Date(t.start),
     end: new Date(t.end),
   }));
+}
+export let showCriticalPath = false;
+
+export function toggleCriticalPath() {
+  showCriticalPath = !showCriticalPath;
 }
