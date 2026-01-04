@@ -40,18 +40,59 @@ export function drawDeps(minDate, scale, width, rowsRight) {
 
     if (!pRow || !cRow) return;
 
-    const px = (daysBetween(minDate, parent.end) + 1) * scale;
-    const tx = daysBetween(minDate, t.start) * scale;
+    const parentStartX = daysBetween(minDate, parent.start) * scale;
+    const parentEndX = (daysBetween(minDate, parent.end) + 1) * scale;
+
+    const childStartX = daysBetween(minDate, t.start) * scale;
+
+    const px = t.depType === "SS" ? parentStartX : parentEndX;
+
+    const tx = childStartX;
 
     const py = pRow.offsetTop + pRow.offsetHeight / 2;
     const ty = cRow.offsetTop + cRow.offsetHeight / 2;
 
     const path = document.createElementNS(svgNS, "path");
 
-    path.setAttribute(
-      "d",
-      `M ${px} ${py} C ${px + 40} ${py} ${tx - 40} ${ty} ${tx} ${ty}`
-    );
+    const dx = tx - px;
+    const dy = ty - py;
+
+    let d;
+
+    // 🔑 CASE 1: Almost vertical (SS aligned, or very close)
+    if (Math.abs(dx) < 20) {
+      const midY = py + dy / 2;
+
+      d = `
+    M ${px} ${py}
+    C ${px} ${midY},
+      ${tx} ${midY},
+      ${tx} ${ty}
+  `;
+    }
+    // 🔑 CASE 2: Normal curved dependency
+    else {
+      const dirX = Math.sign(dx);
+      const dirY = Math.sign(dy);
+
+      const bendX = Math.min(60, Math.abs(dx) / 2);
+      const bendY = Math.min(40, Math.abs(dy) / 2);
+
+      const c1x = px + bendX * dirX;
+      const c2x = tx - bendX * dirX;
+
+      const c1y = py + bendY * dirY;
+      const c2y = ty - bendY * dirY;
+
+      d = `
+    M ${px} ${py}
+    C ${c1x} ${c1y},
+      ${c2x} ${c2y},
+      ${tx} ${ty}
+  `;
+    }
+
+    path.setAttribute("d", d);
 
     path.setAttribute("stroke", "#94a3b8");
     path.setAttribute("fill", "none");
