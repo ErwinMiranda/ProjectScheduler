@@ -125,8 +125,12 @@ export function commitBaselineFromFirestore(list) {
     end: new Date(t.end),
   }));
 }
+/* ============================================================
+   CRITICAL PATH STATE
+============================================================ */
 export let showCriticalPath = false;
 
 export function toggleCriticalPath() {
   showCriticalPath = !showCriticalPath;
+  return showCriticalPath; // Return the new status (true/false)
 }
