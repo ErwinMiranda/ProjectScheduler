@@ -8,9 +8,19 @@ import {
   loadAllTemplates,
 } from "./firebase.js";
 
-import { baselineTasks } from "./state.js";
+import {
+  baselineTasks,
+  toggleCriticalPath,
+  showCriticalPath,
+} from "./state.js";
 import { render } from "./renderer.js";
-import { addDays, daysBetween } from "./utils.js";
+import {
+  addDays,
+  daysBetween,
+  showLoading,
+  hideLoading,
+  organizeTasksByWaterfall,
+} from "./utils.js";
 import {
   updateTaskList,
   tasks,
@@ -39,17 +49,21 @@ let unsavedChanges = false;
 function ensureSaveControls() {
   if (document.getElementById("saveChangesBtn")) return;
 
+  const headerControls = document.querySelector(".header-controls"); // Ensure this is selected
+
   const saveBtn = document.createElement("button");
   saveBtn.id = "saveChangesBtn";
   saveBtn.className = "btn";
   saveBtn.textContent = "Save changes";
   saveBtn.disabled = true;
+  saveBtn.style.marginLeft = "8px";
 
   const discardBtn = document.createElement("button");
   discardBtn.id = "discardChangesBtn";
   discardBtn.className = "btn";
   discardBtn.textContent = "Discard";
   discardBtn.disabled = true;
+  discardBtn.style.marginLeft = "6px";
 
   saveBtn.onclick = async () => {
     saveBtn.disabled = true;
@@ -68,24 +82,57 @@ function ensureSaveControls() {
     discardBtn.disabled = false;
   };
 
-  const cpBtn = document.createElement("button");
-  cpBtn.id = "cpToggleBtn";
-  cpBtn.className = "btn";
-  cpBtn.textContent = "CP";
-  cpBtn.onclick = () => {
-    import("./state.js").then((m) => {
-      m.toggleCriticalPath();
-      refresh();
-    });
-  };
-
-  headerControls.appendChild(cpBtn);
+  // Append ONLY Save/Discard buttons here
   headerControls.appendChild(saveBtn);
   headerControls.appendChild(discardBtn);
 }
 
 /* ============================================================
-   UNSAVED FLAG
+   CRITICAL PATH BUTTON (Standalone)
+============================================================ */
+// Make sure these are imported at the top of your file:
+// import { toggleCriticalPath, showCriticalPath } from "./state.js";
+
+function ensureCPButton() {
+  if (document.getElementById("cpToggleBtn")) return;
+
+  const headerControls = document.querySelector(".header-controls");
+
+  const cpBtn = document.createElement("button");
+  cpBtn.id = "cpToggleBtn";
+  cpBtn.className = "btn";
+  cpBtn.textContent = "CP";
+  cpBtn.style.marginLeft = "8px";
+
+  // 1. Define Visual Logic
+  const updateButtonStyle = (isActive) => {
+    if (isActive) {
+      cpBtn.style.backgroundColor = "#dc2626";
+      cpBtn.style.color = "#ffffff";
+      cpBtn.style.borderColor = "#b91c1c";
+    } else {
+      cpBtn.style.backgroundColor = "";
+      cpBtn.style.color = "";
+      cpBtn.style.borderColor = "";
+    }
+  };
+
+  // 2. Initial State
+  updateButtonStyle(showCriticalPath);
+
+  // 3. Click Handler
+  cpBtn.onclick = () => {
+    const newState = toggleCriticalPath();
+    updateButtonStyle(newState);
+    refresh();
+  };
+
+  // 4. Append CP Button here
+  headerControls.appendChild(cpBtn);
+}
+
+/* ============================================================
+   UNSAVED FLAG HANDLER
 ============================================================ */
 function setUnsaved(flag) {
   unsavedChanges = !!flag;
@@ -96,6 +143,11 @@ function setUnsaved(flag) {
 
   if (saveBtn) saveBtn.disabled = !unsavedChanges;
   if (discardBtn) discardBtn.disabled = !unsavedChanges;
+
+  const mark = document.getElementById("unsavedMark");
+  if (mark) {
+    mark.hidden = !unsavedChanges;
+  }
 }
 
 /* ============================================================
@@ -341,33 +393,47 @@ document.addEventListener("keydown", async (e) => {
 async function saveChanges() {
   if (!currentWO) return alert("No WO selected.");
 
-  try {
-    // Always recompute duration
-    tasks.forEach((t) => {
-      t.duration = daysBetween(t.start, t.end) + 1;
-    });
+  const saveBtn = document.getElementById("saveChangesBtn");
+  const discardBtn = document.getElementById("discardChangesBtn");
 
-    const res = await batchSaveTasks(tasks);
+  discardBtn.disabled = true;
+  showLoading("Saving & Organizing...");
+  try {
+    // 1. RE-SORT LOCAL TASKS BEFORE SAVING
+    // This ensures that if you added tasks locally, they get snapped into the waterfall structure
+    const sortedTasks = organizeTasksByWaterfall(tasks);
+
+    // Update the local state with the sorted version
+    updateTaskList(sortedTasks);
+
+    // 2. Save the SORTED list
+    const res = await batchSaveTasks(sortedTasks);
 
     if (res.createdMap) {
       Object.entries(res.createdMap).forEach(([idx, newId]) => {
+        // Because we sorted 'tasks' and passed 'sortedTasks' to save,
+        // the indices match perfectly.
         if (tasks[idx]) tasks[idx].id = newId;
       });
     }
 
-    const list = await fetchTasksByWOOnce(currentWO);
-    updateTaskList(list);
-    commitBaselineFromFirestore(list);
+    // 3. Reload to verify
+    // (Optional: You can just continue with current data, but fetching ensures sync)
+    // let list = await fetchTasksByWOOnce(currentWO);
+    // list = organizeTasksByWaterfall(list);
+    // updateTaskList(list);
 
     applyDependencies();
     refresh();
     refreshDependencyDropdown();
     setUnsaved(false);
+    hideLoading();
 
-    alert("Saved!");
+    //alert("Saved & Re-organized!");
   } catch (err) {
-    console.error(err);
-    alert("Save failed!");
+    console.error("Save failed", err);
+    hideLoading();
+    alert("Save error — see console");
   }
 }
 
@@ -427,7 +493,7 @@ document.getElementById("cancelTemplateBtn").onclick = () => {
 };
 
 /* ============================================================
-   SAVE TEMPLATE
+   SAVE TEMPLATE (With Start Offset Fix)
 ============================================================ */
 document.getElementById("confirmSaveTemplate").onclick = async () => {
   const name = document.getElementById("templateName").value.trim();
@@ -435,26 +501,45 @@ document.getElementById("confirmSaveTemplate").onclick = async () => {
 
   if (!name) return alert("Template name required.");
 
-  // Always compute duration fresh
-  const templateTasks = tasks.map((t, index) => {
+  // 1. Sort to ensure correct visual order
+  const sortedTasks = [...tasks].sort((a, b) => (a.row || 0) - (b.row || 0));
+
+  if (!sortedTasks.length) return alert("No tasks to save!");
+
+  // 2. Find the "Anchor Date" (The earliest start date in the entire plan)
+  let anchorDate = sortedTasks[0].start;
+  sortedTasks.forEach((t) => {
+    if (t.start < anchorDate) anchorDate = t.start;
+  });
+
+  // 3. Map tasks and calculate 'startOffset'
+  const templateTasks = sortedTasks.map((t, index) => {
     const duration = daysBetween(t.start, t.end) + 1;
 
+    // Calculate how many days this task starts after the anchor date
+    const startOffset = daysBetween(anchorDate, t.start);
+
+    // Find dependency index relative to sorted list
+    const depIdx = sortedTasks.findIndex((x) => x.id === t.depends);
+
     return {
-      index, // order
+      index,
       title: t.title,
-      duration, // fixed duration
-      dependsIndex: tasks.findIndex((x) => x.id === t.depends),
+      duration,
+      dependsIndex: depIdx,
       depType: t.depType || "FS",
       lagDays: t.lagDays || 0,
       leadDays: t.leadDays || 0,
       color: t.color || "",
+      startOffset: startOffset, // <--- THIS SAVES THE RELATIVE POSITION
     };
   });
 
   try {
+    // showLoading("Saving...");
     await saveTemplateToFirestore(name, desc, templateTasks);
-    alert("Template saved!");
     document.getElementById("saveTemplateModal").hidden = true;
+    alert("Template saved successfully!");
   } catch (err) {
     console.error(err);
     alert("Failed to save template.");
@@ -484,7 +569,15 @@ document.getElementById("newProjectBtn").onclick = async () => {
 };
 
 document.getElementById("cancelProjectBtn").onclick = () => {
+  // 1. Forget the previously selected Work Order
+  localStorage.removeItem("selectedWO");
+
+  // 2. Hide the modal (visual feedback)
   document.getElementById("projectModal").hidden = true;
+
+  // 3. Reload the page
+  // Since 'selectedWO' is gone, the dropdown will start empty.
+  window.location.reload();
 };
 
 /* Utility to add a blank row */
@@ -544,9 +637,23 @@ document.getElementById("confirmStartDateBtn").onclick = () => {
   const tpl = window.activeTemplate;
   const builtTasks = []; // store { start, end } for dependency resolution
 
-  tpl.tasks.forEach((task, idx) => {
-    let start = new Date(projectStart);
+  // Helper to add days (ensure this function is available in scope or import it)
+  // function addDays(d, n) { ... }
 
+  tpl.tasks.forEach((task, idx) => {
+    // ---------------------------------------------------------
+    // 1. BASE START: Apply Offset if available, otherwise Project Start
+    // ---------------------------------------------------------
+    let start;
+    if (typeof task.startOffset === "number") {
+      start = addDays(projectStart, task.startOffset);
+    } else {
+      start = new Date(projectStart);
+    }
+
+    // ---------------------------------------------------------
+    // 2. DEPENDENCY OVERRIDE: If linked, parent dictates start
+    // ---------------------------------------------------------
     if (task.dependsIndex != null && task.dependsIndex >= 0) {
       const parent = builtTasks[task.dependsIndex];
 
@@ -554,14 +661,21 @@ document.getElementById("confirmStartDateBtn").onclick = () => {
         if (task.depType === "SS") {
           start = addDays(parent.start, task.lagDays - task.leadDays);
         } else {
+          // Default FS (Finish-to-Start)
           start = addDays(parent.end, 1 + task.lagDays - task.leadDays);
         }
       }
     }
 
+    // Calculate End based on duration
     const end = addDays(start, task.duration - 1);
+
+    // Save for future children to reference
     builtTasks.push({ start, end });
 
+    // ---------------------------------------------------------
+    // 3. RENDER ROW
+    // ---------------------------------------------------------
     const row = document.createElement("div");
     row.className = "task-row";
     row.dataset.start = start.toISOString();
@@ -588,97 +702,194 @@ document.getElementById("cancelStartDateBtn").onclick = () => {
    CREATE PROJECT FROM TEMPLATE
 ============================================================ */
 document.getElementById("createProjectBtn").onclick = async () => {
+  const newWO = document.getElementById("newWO");
+  const newACREG = document.getElementById("newACREG");
+
   const WO = newWO.value.trim();
   const ACREG = newACREG.value.trim();
   if (!WO || !ACREG) return alert("Please fill WO & AC REG.");
 
-  const template = window.activeTemplate;
   const rows = document.querySelectorAll("#taskRows .task-row");
-  const tasksLocal = [];
+  if (rows.length === 0)
+    return alert("No tasks to save! Load a template first.");
 
-  /* STEP 1 — Build temporary tasks with local IDs */
-  rows.forEach((row, index) => {
-    const inputs = row.querySelectorAll("input");
+  showLoading("Structuring Waterfall Schedule...");
 
-    const title = inputs[0].value;
-    const start = new Date(inputs[1].value);
-    const end = new Date(inputs[2].value);
+  try {
+    const tasksLocal = [];
 
-    const duration = daysBetween(start, end) + 1;
+    /* -----------------------------------------------------------
+       1. READ DATA FROM PREVIEW ROWS
+    ----------------------------------------------------------- */
+    rows.forEach((row, index) => {
+      const inputs = row.querySelectorAll("input");
+      const title = inputs[0].value;
+      const startVal = inputs[1].value;
+      const endVal = inputs[2].value;
 
-    const tpl = template?.tasks[index];
+      const start = new Date(startVal);
+      const end = new Date(endVal);
+      const duration = daysBetween(start, end) + 1;
 
-    tasksLocal.push({
-      id: "local-" + Date.now() + "-" + Math.random(),
-      wo: WO,
-      acreg: ACREG,
-      title,
-      start,
-      end,
-      duration,
-      dependsIndex: tpl?.dependsIndex ?? -1,
-      depType: tpl?.depType || "FS",
-      lagDays: tpl?.lagDays || 0,
-      leadDays: tpl?.leadDays || 0,
-      row: index,
-      color: tpl?.color || "",
+      const template = window.activeTemplate;
+      const tpl = template ? template.tasks[index] : {};
+      const tempId = "local-" + Date.now() + "-" + index;
+
+      tasksLocal.push({
+        id: tempId,
+        tempId: tempId,
+        wo: WO,
+        acreg: ACREG,
+        title,
+        start,
+        end,
+        duration,
+        dependsIndex: tpl?.dependsIndex ?? -1,
+        depType: tpl?.depType || "FS",
+        lagDays: tpl?.lagDays || 0,
+        leadDays: tpl?.leadDays || 0,
+        row: 0,
+        color: tpl?.color || "",
+        // We use this to map local dependencies before we have full graph
+        localDepId:
+          tpl?.dependsIndex >= 0 && tasksLocal[tpl.dependsIndex]
+            ? tasksLocal[tpl.dependsIndex].tempId
+            : "",
+      });
     });
-  });
 
-  /* STEP 2 — Replace dependsIndex → depends(localID) */
-  tasksLocal.forEach((t) => {
-    if (t.dependsIndex >= 0) {
-      t.depends = tasksLocal[t.dependsIndex].id;
-    } else {
-      t.depends = "";
+    // Fix local dependency strings immediately for the sort graph
+    tasksLocal.forEach((t) => {
+      t.depends = t.localDepId; // Assign tempId to depends
+    });
+
+    /* -----------------------------------------------------------
+       2. WATERFALL CHAIN SORT (DFS Topological)
+       This Groups: Parent -> Child -> Grandchild
+    ----------------------------------------------------------- */
+    const existingTasks = await import("./firebase.js").then((m) =>
+      m.fetchTasksByWOOnce(WO)
+    );
+
+    // Combine ALL tasks (Existing + New)
+    const allTasks = [...existingTasks, ...tasksLocal];
+
+    // A. Build Helper Maps
+    const taskMap = new Map();
+    const childrenMap = new Map();
+    const roots = [];
+
+    allTasks.forEach((t) => {
+      taskMap.set(t.id, t);
+      if (!childrenMap.has(t.id)) childrenMap.set(t.id, []);
+    });
+
+    // B. Identify Roots and Children
+    allTasks.forEach((t) => {
+      // Check if task has a dependency that actually exists in this list
+      if (t.depends && taskMap.has(t.depends)) {
+        // It is a child
+        childrenMap.get(t.depends).push(t);
+      } else {
+        // It is a root (No parent, or parent is not in this project list)
+        roots.push(t);
+      }
+    });
+
+    // C. Sort Roots by Date (The main timeline backbone)
+    roots.sort((a, b) => a.start - b.start);
+
+    // D. Recursive Traversal (DFS) to build final order
+    const finalSortedTasks = [];
+    const visitedIds = new Set();
+
+    function traverse(task) {
+      if (visitedIds.has(task.id)) return;
+      visitedIds.add(task.id);
+      finalSortedTasks.push(task);
+
+      // Find children
+      const kids = childrenMap.get(task.id) || [];
+
+      // Sort children by Date (Waterfall effect within the chain)
+      kids.sort((a, b) => a.start - b.start);
+
+      // Visit children immediately (Keep them grouped with parent)
+      kids.forEach((kid) => traverse(kid));
     }
-    delete t.dependsIndex;
-  });
 
-  /* STEP 3 — Save tasks, get Firestore IDs */
-  const result = await batchSaveTasks(tasksLocal);
+    // Execute Traversal starting from Roots
+    roots.forEach((root) => traverse(root));
 
-  Object.entries(result.createdMap).forEach(([localIndex, newId]) => {
-    tasksLocal[localIndex].fireId = newId;
-  });
+    // E. Apply the new Row Order
+    const existingTasksToUpdate = [];
 
-  /* STEP 4 — Fix dependencies using final Firestore IDs */
-  tasksLocal.forEach((t) => {
-    t.finalId = t.fireId || t.id;
+    finalSortedTasks.forEach((t, index) => {
+      const oldRow = t.row;
+      t.row = index; // Apply 0, 1, 2... based on Chain Sort
 
-    if (t.depends) {
-      const parentIndex = tasksLocal.findIndex((x) => x.id === t.depends);
-      t.depends = tasksLocal[parentIndex].finalId;
+      // If existing task moved, mark for update
+      if (!String(t.id).startsWith("local-") && oldRow !== index) {
+        existingTasksToUpdate.push(t);
+      }
+    });
+
+    /* -----------------------------------------------------------
+       3. SAVE EXECUTION
+    ----------------------------------------------------------- */
+    // A. Save NEW Tasks
+    const result = await import("./firebase.js").then((m) =>
+      m.batchSaveTasks(tasksLocal)
+    );
+
+    Object.entries(result.createdMap).forEach(([indexStr, newId]) => {
+      tasksLocal[indexStr].finalId = newId;
+    });
+
+    // B. Update EXISTING tasks (Row re-ordering)
+    if (existingTasksToUpdate.length > 0) {
+      await import("./firebase.js").then((m) =>
+        m.batchSaveTasks(existingTasksToUpdate)
+      );
     }
-  });
 
-  /* STEP 5 — Re-save dependencies */
-  await batchSaveTasks(
-    tasksLocal.map((t) => ({
-      id: t.finalId,
-      wo: t.wo,
-      acreg: t.acreg,
-      title: t.title,
-      start: t.start,
-      end: t.end,
-      duration: t.duration,
-      depends: t.depends,
-      depType: t.depType,
-      lagDays: t.lagDays,
-      leadDays: t.leadDays,
-      row: t.row,
-      color: t.color,
-    }))
-  );
+    /* -----------------------------------------------------------
+       4. FIX DEPENDENCIES (TempID -> RealID)
+    ----------------------------------------------------------- */
+    const updates = [];
+    tasksLocal.forEach((t) => {
+      t.id = t.finalId;
+      if (t.depends && t.depends.startsWith("local-")) {
+        const parent = tasksLocal.find((p) => p.tempId === t.depends);
+        if (parent && parent.finalId) {
+          t.depends = parent.finalId;
+        } else {
+          t.depends = "";
+        }
+        updates.push(t);
+      }
+    });
 
-  /* STEP 6 — Reload UI */
-  await loadWOList();
-  woFilter.value = WO;
-  updateAcRegFromWO(WO);
+    if (updates.length > 0) {
+      await import("./firebase.js").then((m) => m.batchSaveTasks(updates));
+    }
 
-  await loadFromFirestoreAndCommitBaseline(WO);
-  updateTAT();
-  document.getElementById("projectModal").hidden = true;
+    /* -----------------------------------------------------------
+       5. RELOAD UI
+    ----------------------------------------------------------- */
+    await import("./app.js").then((m) => m.loadWOList());
+    const woFilter = document.getElementById("woFilter");
+    woFilter.value = WO;
+    woFilter.dispatchEvent(new Event("change"));
+
+    hideLoading();
+    alert("Project structured with Waterfall Dependencies!");
+    document.getElementById("projectModal").hidden = true;
+  } catch (err) {
+    console.error(err);
+    hideLoading();
+    alert("Error: " + err.message);
+  }
 };
 /* ============================================================
    TAT (Turn-Around Time) Computation
@@ -762,7 +973,7 @@ async function loadFromFirestoreAndCommitBaseline(wo) {
 }
 
 /* ============================================================
-   WO SELECT CHANGE — Load Project
+   WO CHANGE (OFFLINE LOAD)
 ============================================================ */
 woFilter.addEventListener("change", async (e) => {
   currentWO = e.target.value;
@@ -774,32 +985,35 @@ woFilter.addEventListener("change", async (e) => {
 
   localStorage.setItem("selectedWO", currentWO);
 
-  // 🩹 FIX: If no WO selected → CLEAR SCREEN
   if (!currentWO) {
-    updateTaskList([]); // no tasks
-
-    // clear gantt
-    render(taskLeftList, rowsRight, timelineHeader, depOverlay, new Date());
-
-    // reset dropdown + TAT
-    refreshDependencyDropdown();
-    document.getElementById("tatDisplay").textContent = "TAT: —";
-
+    updateTaskList([]);
+    refresh();
     setUnsaved(false);
     return;
   }
 
-  // Normal loading
-  const list = await fetchTasksByWOOnce(currentWO);
-  loadFromFirestoreAndCommitBaseline(currentWO);
-  updateTaskList(list);
+  // Optional: Show loading here if you like
+  showLoading("Loading Project...");
 
-  applyDependencies();
-  refresh();
-  updateTAT(); // ensure TAT updates
+  try {
+    // 1. Fetch raw list
+    let list = await fetchTasksByWOOnce(currentWO);
 
-  refreshDependencyDropdown();
-  setUnsaved(false);
+    // 2. FORCE WATERFALL SORT
+    list = organizeTasksByWaterfall(list);
+
+    // 3. Update State & Render
+    updateTaskList(list);
+    applyDependencies();
+    refresh();
+    refreshDependencyDropdown();
+    setUnsaved(false);
+  } catch (err) {
+    console.error(err);
+    alert("Error loading project");
+  } finally {
+    hideLoading();
+  }
 });
 
 /* ============================================================
@@ -928,3 +1142,13 @@ export function insertTaskBelow(baseTask) {
     }
   });
 }
+/* ============================================================
+   INITIAL SETUP
+============================================================ */
+// ... (your date setup code) ...
+
+ensureSaveControls(); // 1. Creates Save & Discard
+ensureCPButton(); // 2. Creates CP Button
+
+await loadWOList();
+// ...
