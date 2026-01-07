@@ -45,60 +45,29 @@
         style="display: flex; flex-direction: column; flex: 1; min-height: 0"
       >
         <div class="gantt-scroll" id="ganttScroll">
+          <div class="timeline-header">
+            <div class="left-timeline-header">
+              <div style="width: 55px; font-size: 14px; padding-left: 6px">
+                Add/Del
+              </div>
+              <div style="width: 15px">#</div>
+              <div style="width: 140px">Task Name</div>
+              <div style="width: 40px">Dur</div>
+              <div style="width: 350px">Start → End</div>
+            </div>
+            <div class="right-timeline-header">
+              <div id="timelineHeader" class="timeline-header"></div>
+            </div>
+          </div>
+
           <div class="gantt-inner">
             <!-- Left column -->
             <div class="gantt-left">
-              <div class="timeline-header">
-                <div
-                  style="
-                    width: 40px;
-                    color: #111;
-                    padding-left: 4px;
-                    text-align: center;
-                  "
-                >
-                  Add
-                </div>
-                <div
-                  style="
-                    width: 40px;
-                    color: #111;
-                    padding-left: 4px;
-                    text-align: center;
-                  "
-                >
-                  Del
-                </div>
-                <div
-                  style="
-                    width: 20px;
-                    color: #111;
-                    padding-left: 4px;
-                    text-align: center;
-                  "
-                >
-                  #
-                </div>
-                <div style="width: 120px; color: #111; padding-left: 4px">
-                  Task Name
-                </div>
-                <div
-                  style="width: 50px; text-align: center; color: var(--muted)"
-                >
-                  Dur
-                </div>
-                <div
-                  style="width: 165px; text-align: center; color: var(--muted)"
-                >
-                  Start → End
-                </div>
-              </div>
               <div id="taskLeftList" class="rows-container"></div>
             </div>
 
             <!-- Right column -->
             <div class="gantt-right">
-              <div id="timelineHeader" class="timeline-header"></div>
               <div
                 id="rowsRight"
                 class="rows-container"
@@ -194,6 +163,13 @@
           <button id="confirmStartDateBtn" class="btn primary">OK</button>
         </div>
       </div>
+    </div>
+
+    <!-- Minimalist loading overlay -->
+    <!-- Minimalist Loading Overlay -->
+    <div id="loadingOverlay">
+      <div class="spinner"></div>
+      <div id="loadingText">Loading...</div>
     </div>
 
     <!-- external JS -->
