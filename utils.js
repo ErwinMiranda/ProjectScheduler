@@ -158,3 +158,80 @@ export function computeCriticalPath(tasks) {
 
   return cp;
 }
+export function showLoading(msg = "Loading...") {
+  const overlay = document.getElementById("loadingOverlay");
+  if (!overlay) return;
+  const text = document.getElementById("loadingText");
+  if (text) text.textContent = msg;
+  overlay.style.display = "flex";
+}
+
+export function hideLoading() {
+  const overlay = document.getElementById("loadingOverlay");
+  if (!overlay) return;
+  overlay.style.display = "none";
+}
+export function toDateInput(d) {
+  const date = new Date(d);
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+/* ============================================================
+   HELPER: WATERFALL SORT (DFS Topological)
+   Groups: Parent -> Child -> Grandchild, then sorts by Date
+============================================================ */
+export function organizeTasksByWaterfall(taskList) {
+  // 1. Create Maps for fast lookup
+  const taskMap = new Map();
+  const childrenMap = new Map();
+  const roots = [];
+
+  taskList.forEach((t) => {
+    taskMap.set(t.id, t);
+    childrenMap.set(t.id, []);
+  });
+
+  // 2. Identify Roots (No parent, or parent not in this list) vs Children
+  taskList.forEach((t) => {
+    if (t.depends && taskMap.has(t.depends)) {
+      childrenMap.get(t.depends).push(t);
+    } else {
+      roots.push(t);
+    }
+  });
+
+  // 3. Sort Roots by Start Date (The main timeline backbone)
+  roots.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  // 4. Recursive Traversal (DFS) to build final order
+  const sortedList = [];
+  const visitedIds = new Set();
+
+  function traverse(task) {
+    if (visitedIds.has(task.id)) return;
+    visitedIds.add(task.id);
+    sortedList.push(task);
+
+    // Find children
+    const kids = childrenMap.get(task.id) || [];
+
+    // Sort children by Date so siblings appear chronologically
+    kids.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+    // Visit children immediately to keep them under parent
+    kids.forEach((kid) => traverse(kid));
+  }
+
+  // Execute Traversal
+  roots.forEach((root) => traverse(root));
+
+  // 5. Re-assign Row Numbers based on new order
+  // (This ensures the visual row matches the array index)
+  sortedList.forEach((t, index) => {
+    t.row = index;
+  });
+
+  return sortedList;
+}
