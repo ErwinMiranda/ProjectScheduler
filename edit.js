@@ -1,7 +1,7 @@
 // edit.js — inline title & duration editing + dropdown refresh (OFFLINE-FIRST PATCH)
 import { pushHistory } from "./state.js";
 import { tasks } from "./state.js";
-import { addDays, daysBetween } from "./utils.js";
+import { addDays, daysBetween, toDateInput } from "./utils.js";
 import { applyDependencies } from "./app.js";
 import { render } from "./renderer.js";
 
@@ -108,5 +108,51 @@ export function attachDurationEditing() {
         if (e.key === "Escape") render();
       });
     };
+  });
+}
+export function attachDateEditing() {
+  document.querySelectorAll(".task-dates").forEach((wrap) => {
+    const id = wrap.dataset.id;
+    const task = tasks.find((t) => t.id === id);
+    if (!task) return;
+
+    const startInput = wrap.querySelector(".task-start");
+    const endInput = wrap.querySelector(".task-end");
+
+    const commit = () => {
+      const newStart = new Date(startInput.value);
+      const newEnd = new Date(endInput.value);
+
+      if (isNaN(newStart) || isNaN(newEnd)) return;
+
+      // how long the task originally was
+      const duration = daysBetween(task.start, task.end);
+
+      pushHistory();
+
+      if (startInput === document.activeElement) {
+        // START changed → move task, keep duration
+        task.start = newStart;
+        task.end = addDays(newStart, duration);
+        endInput.value = toDateInput(task.end);
+      } else {
+        // END changed → resize task
+        if (newEnd < newStart) return;
+        task.start = newStart;
+        task.end = newEnd;
+      }
+
+      window.dispatchEvent(new CustomEvent("localchange"));
+      applyDependencies();
+      render();
+    };
+
+    startInput.addEventListener("change", commit);
+    endInput.addEventListener("change", commit);
+
+    // prevent drag conflict
+    [startInput, endInput].forEach((i) => {
+      i.addEventListener("mousedown", (e) => e.stopPropagation());
+    });
   });
 }
