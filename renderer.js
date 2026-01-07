@@ -6,10 +6,14 @@ import { tasks, selectedBars } from "./state.js";
 import { daysBetween, formatDate, addDays } from "./utils.js";
 import { drawDeps } from "./deps.js";
 import { makeDraggable, makeLeftRowDraggable } from "./drag.js";
-import { attachDurationEditing, attachTitleEditing } from "./edit.js";
+import {
+  attachDurationEditing,
+  attachTitleEditing,
+  attachDateEditing,
+} from "./edit.js";
 import { pushHistory } from "./state.js";
 import { showCriticalPath } from "./state.js";
-import { computeCriticalPath } from "./utils.js";
+import { computeCriticalPath, toDateInput } from "./utils.js";
 import { deleteTask, insertTaskBelow } from "./app.js";
 let scale = 36;
 
@@ -329,9 +333,20 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
       <span>${daysBetween(task.start, task.end) + 1}d</span>
     </div>
 
-    <div class="task-dates">
-      ${formatDate(task.start)} → ${formatDate(task.end)}
-    </div>
+    <div class="task-dates" data-id="${task.id}">
+  <input
+    type="date"
+    class="task-start"
+    value="${toDateInput(task.start)}"
+  />
+  →
+  <input
+    type="date"
+    class="task-end"
+    value="${toDateInput(task.end)}"
+  />
+</div>
+
   </div>
 `;
 
@@ -507,6 +522,7 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
 
   attachDurationEditing();
   attachTitleEditing();
+  attachDateEditing();
 }
 
 /* --------------------------------------------------------------------------
