@@ -1,6 +1,6 @@
 :root {
-  --left-width: clamp(380px, 32vw, 450px);
-  --row-height: 44px;
+  --left-width: clamp(380px, 32vw, 550px);
+  --row-height: 35px;
   --bar-height: 20px;
   --grid-bg: #f7f9fb;
   --accent: #0c2868;
@@ -165,7 +165,7 @@ input[type="date"] {
 
 .index {
   color: var(--muted);
-  width: 20px;
+  width: 40px;
 }
 
 .task-title {
@@ -693,4 +693,56 @@ input[type="date"] {
   100% {
     transform: rotate(360deg);
   }
+}
+/* Status Dropdown Styling */
+.task-status {
+  cursor: pointer;
+  appearance: none; /* Removes default browser arrow to look like a badge */
+  text-align: center;
+  transition: all 0.2s;
+  font-weight: 50;
+  color: white;
+  width: 120px;
+  padding: 2px 6px;
+  font-size: 13px;
+  margin-right: 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+}
+
+.task-status:hover {
+  opacity: 0.9;
+  transform: scale(1.02);
+}
+
+.task-status option {
+  background: white;
+  color: #333;
+  font-weight: normal;
+}
+/* Today's Date Line */
+.today-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: #ef4444; /* Red-500 */
+  z-index: 20; /* Above bars, below tooltip */
+  pointer-events: none; /* Let clicks pass through */
+  opacity: 0.8;
+}
+
+/* Optional: "Today" Label at the top of the line */
+.today-line::after {
+  content: "Today";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #ef4444;
+  color: white;
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 0 0 4px 4px;
+  font-weight: bold;
 }
