@@ -235,3 +235,246 @@ export function organizeTasksByWaterfall(taskList) {
 
   return sortedList;
 }
+/* ============================================================
+   PRINT / EXPORT TO PDF (Fixed Bottom Cut + Text Alignment)
+   Place in utils.js
+============================================================ */
+import { tasks } from "./state.js"; // <--- IMPORT TASKS DATA
+
+export function ensurePrintButton() {
+  if (document.getElementById("printPdfBtn")) return;
+
+  const headerControls = document.querySelector(".header-controls");
+  if (!headerControls) return;
+
+  const printBtn = document.createElement("button");
+  printBtn.id = "printPdfBtn";
+  printBtn.className = "btn";
+  printBtn.textContent = "Print PDF";
+  printBtn.title = "Export to PDF (A3 Landscape)";
+  printBtn.style.marginLeft = "8px";
+
+  printBtn.onclick = async () => {
+    if (typeof showLoading === "function") showLoading("Generating PDF...");
+    printBtn.disabled = true;
+
+    try {
+      const { jsPDF } = window.jspdf;
+
+      /* --------------------------------------------------------
+         1. CALCULATE TAT
+      -------------------------------------------------------- */
+      let tatText = "";
+
+      if (tasks && tasks.length > 0) {
+        let minTime = Infinity;
+        let maxTime = -Infinity;
+
+        tasks.forEach((t) => {
+          const start =
+            t.start instanceof Date
+              ? t.start.getTime()
+              : new Date(t.start).getTime();
+          const end =
+            t.end instanceof Date ? t.end.getTime() : new Date(t.end).getTime();
+
+          if (!isNaN(start) && start < minTime) minTime = start;
+          if (!isNaN(end) && end > maxTime) maxTime = end;
+        });
+
+        if (minTime !== Infinity && maxTime !== -Infinity) {
+          const diffDays =
+            Math.ceil((maxTime - minTime) / (1000 * 60 * 60 * 24)) + 1;
+          tatText = ` | TAT: ${diffDays} Days`;
+        }
+      }
+
+      /* --------------------------------------------------------
+         2. CAPTURE GANTT
+      -------------------------------------------------------- */
+      const element = document.querySelector(".gantt-scroll");
+      const innerContent = document.querySelector(".gantt-inner");
+
+      const targetWidth = innerContent.scrollWidth;
+
+      // 🔥 FIX: ADD 50PX BUFFER TO PREVENT BOTTOM CUT
+      const targetHeight = element.scrollHeight + 50;
+
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        width: targetWidth,
+        height: targetHeight,
+        windowWidth: targetWidth,
+        x: 0,
+        y: 0,
+        onclone: (clonedDoc) => {
+          // A. Fix Container
+          const clonedScroll = clonedDoc.querySelector(".gantt-scroll");
+          clonedScroll.style.overflow = "visible";
+          // Ensure the cloned container accepts the buffer height
+          clonedScroll.style.height = targetHeight + "px";
+          clonedScroll.style.width = targetWidth + "px";
+          clonedScroll.style.background = "#ffffff";
+
+          // B. Fix Sticky Header
+          const clonedHeader = clonedDoc.querySelector(".timeline-header");
+          if (clonedHeader) {
+            clonedHeader.style.position = "static";
+            clonedHeader.style.top = "auto";
+            clonedHeader.style.width = "100%";
+          }
+
+          // ... inside onclone: (clonedDoc) => { ...
+
+          // C. Hide Add/Del Buttons (Row Content)
+          clonedDoc
+            .querySelectorAll(".task-insert, .task-delete")
+            .forEach((el) => {
+              el.style.display = "none";
+            });
+
+          // Hide Add/Del Header AND Adjust Task Name Header
+          const headerDivs = clonedDoc.querySelectorAll(
+            ".left-timeline-header > div"
+          );
+          headerDivs.forEach((div) => {
+            const text = div.textContent.trim().toLowerCase();
+
+            // 1. Completely remove the "Add/Del" header space
+            if (text.includes("add") || text.includes("del")) {
+              div.style.display = "none";
+            }
+
+            // 2. Widen the "Task Name" header
+            if (text.includes("task name")) {
+              div.style.width = "300px"; // Increased width (was 140px)
+            }
+          });
+
+          // ... rest of your code (Status Badge fix, Day fix, etc.) ...
+
+          // C. Status Badge (Text Moved Up)
+          clonedDoc.querySelectorAll("select.task-status").forEach((select) => {
+            const badge = clonedDoc.createElement("div");
+            const selectedOpt = select.options[select.selectedIndex];
+            const text = selectedOpt ? selectedOpt.text : select.value;
+
+            badge.textContent = text;
+            badge.style.backgroundColor =
+              select.style.backgroundColor || "#334155";
+            badge.style.color = "#ffffff";
+            badge.style.textAlign = "center";
+            badge.style.display = "flex";
+            badge.style.alignItems = "center";
+            badge.style.justifyContent = "center";
+            badge.style.width = "80px";
+            //badge.style.height = "20px";
+            badge.style.borderRadius = "6px";
+            badge.style.fontSize = "13px";
+            badge.style.fontWeight = "600";
+            //badge.style.paddingBottom = "2px"; // Nudge text up
+
+            if (select.parentNode)
+              select.parentNode.replaceChild(badge, select);
+          });
+
+          // D. Day Inputs (Converted to Static Badges)
+          clonedDoc
+            .querySelectorAll(".day-edit-start, .day-edit-end")
+            .forEach((input) => {
+              const dayBadge = clonedDoc.createElement("div");
+
+              dayBadge.textContent = input.value;
+              dayBadge.style.background = "#f1f5f9";
+              dayBadge.style.border = "1px solid #cbd5e1";
+              dayBadge.style.borderRadius = "4px";
+              dayBadge.style.width = "50px";
+              dayBadge.style.fontSize = "13px";
+              dayBadge.style.color = "#334155";
+              dayBadge.style.display = "flex";
+              dayBadge.style.alignItems = "center";
+              dayBadge.style.justifyContent = "center";
+              //dayBadge.style.height = "24px";
+              //dayBadge.style.marginTop = "-1px";
+              //dayBadge.style.paddingBottom = "2px"; // Nudge text up
+
+              if (input.parentNode)
+                input.parentNode.replaceChild(dayBadge, input);
+            });
+
+          // E. Force Row Height
+          // E. Force Row Height
+          clonedDoc.querySelectorAll(".task-dates").forEach((row) => {
+            row.style.width = "200px";
+
+            //row.style.height = "44px";
+          });
+          clonedDoc.querySelectorAll(".task-title").forEach((row) => {
+            row.style.width = "240px";
+            row.fontSize = "12px";
+            //row.style.height = "44px";
+          });
+        },
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+
+      /* --------------------------------------------------------
+         3. GENERATE PDF
+      -------------------------------------------------------- */
+      const pdf = new jsPDF("l", "mm", "a3");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 10;
+      const usableWidth = pageWidth - margin * 2;
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      const ratio = usableWidth / imgWidth;
+      const pdfImageHeight = imgHeight * ratio;
+
+      const woVal = document.getElementById("woFilter").value || "Project";
+      const acReg = document.getElementById("acRegLabel").textContent || "";
+
+      pdf.setFontSize(14);
+      pdf.text(`Project Schedule: ${woVal} (${acReg})${tatText}`, margin, 10);
+
+      let heightLeft = pdfImageHeight;
+      let position = 15;
+
+      pdf.addImage(
+        imgData,
+        "PNG",
+        margin,
+        position,
+        usableWidth,
+        pdfImageHeight
+      );
+      heightLeft -= pageHeight - position;
+
+      while (heightLeft > 0) {
+        position = position - pageHeight;
+        pdf.addPage("a3", "l");
+        pdf.addImage(
+          imgData,
+          "PNG",
+          margin,
+          position,
+          usableWidth,
+          pdfImageHeight
+        );
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`Gantt_${woVal}_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (err) {
+      console.error("PDF Error:", err);
+      alert("Failed to generate PDF. See console.");
+    } finally {
+      if (typeof hideLoading === "function") hideLoading();
+      printBtn.disabled = false;
+    }
+  };
+
+  headerControls.appendChild(printBtn);
+}
