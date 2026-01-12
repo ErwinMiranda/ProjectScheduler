@@ -20,6 +20,7 @@ import {
   showLoading,
   hideLoading,
   organizeTasksByWaterfall,
+  ensurePrintButton,
 } from "./utils.js";
 import {
   updateTaskList,
@@ -340,6 +341,7 @@ document.getElementById("addTaskBtn").onclick = () => {
     start,
     end,
     duration,
+    status: "Open", // <--- ADD THIS LINE
     depends: dep,
     depType: "FS",
     lagDays: 0,
@@ -744,6 +746,7 @@ document.getElementById("createProjectBtn").onclick = async () => {
         start,
         end,
         duration,
+        status: "Open", // <--- ADD THIS LINE
         dependsIndex: tpl?.dependsIndex ?? -1,
         depType: tpl?.depType || "FS",
         lagDays: tpl?.lagDays || 0,
@@ -883,7 +886,7 @@ document.getElementById("createProjectBtn").onclick = async () => {
     woFilter.dispatchEvent(new Event("change"));
 
     hideLoading();
-    alert("Project structured with Waterfall Dependencies!");
+    //alert("Project structured with Waterfall Dependencies!");
     document.getElementById("projectModal").hidden = true;
   } catch (err) {
     console.error(err);
@@ -1119,6 +1122,7 @@ export function insertTaskBelow(baseTask) {
     start,
     end,
     duration: 1,
+    status: "Open", // <--- ADD THIS LINE (Default Status)
     depends: "",
     depType: "FS",
     lagDays: 0,
@@ -1149,6 +1153,7 @@ export function insertTaskBelow(baseTask) {
 
 ensureSaveControls(); // 1. Creates Save & Discard
 ensureCPButton(); // 2. Creates CP Button
+ensurePrintButton(); // <--- Add this line
 
 await loadWOList();
 // ...
