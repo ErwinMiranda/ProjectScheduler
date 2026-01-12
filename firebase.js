@@ -32,7 +32,7 @@ export const db = getFirestore(app);
 export const tasksCol = collection(db, "tasks");
 
 /* -------------------------------------------
-   Add NEW Task (used only in online mode)
+   Add NEW Task (Legacy/Online Mode)
 -------------------------------------------- */
 export async function addTask(wo, acreg, title, start, end, dep) {
   return addDoc(tasksCol, {
@@ -41,8 +41,9 @@ export async function addTask(wo, acreg, title, start, end, dep) {
     title,
     start: new Date(start).toISOString(),
     end: new Date(end).toISOString(),
+    status: "Open", // ✅ Added Default
     depends: dep,
-    row: Date.now(), // absolute ordering
+    row: Date.now(),
     lagDays: 0,
     leadDays: 0,
     taskno: Date.now(),
@@ -61,20 +62,20 @@ export async function saveTask(task) {
     title: task.title || "",
     start: task.start.toISOString(),
     end: task.end.toISOString(),
+    status: task.status || "Open", // ✅ Added
     depends: task.depends || "",
-    depType: task.depType || "FS", // ✅ ADD
+    depType: task.depType || "FS",
     row: task.row || 0,
     lagDays: Number(task.lagDays) || 0,
     leadDays: Number(task.leadDays) || 0,
     taskno: task.taskno || Date.now(),
     updatedAt: serverTimestamp(),
-    color: t.color || "",
+    color: task.color || "", // Fixed 't.color' typo
   });
 }
 
 /* -------------------------------------------
-   REALTIME Listener (not used in offline mode,
-   but kept for compatibility)
+   REALTIME Listener (Compatibility)
 -------------------------------------------- */
 export function listenTasksByWO(wo, callback) {
   const q = query(tasksCol, where("wo", "==", wo));
@@ -89,6 +90,7 @@ export function listenTasksByWO(wo, callback) {
         title: data.title || "",
         start: new Date(data.start),
         end: new Date(data.end),
+        status: data.status || "Open", // ✅ Added
         depends: data.depends || "",
         row: data.row || 0,
         lagDays: Number.isFinite(data.lagDays) ? data.lagDays : 0,
@@ -98,15 +100,13 @@ export function listenTasksByWO(wo, callback) {
       };
     });
 
-    // Sort by row only
     list.sort((a, b) => (a.row || 0) - (b.row || 0));
-
     callback(list);
   });
 }
 
 /* -------------------------------------------
-   ONE-TIME Fetch (used for offline-first mode)
+   ONE-TIME Fetch (Offline-First Mode)
 -------------------------------------------- */
 export async function fetchTasksByWOOnce(wo) {
   const q = query(tasksCol, where("wo", "==", wo));
@@ -121,11 +121,10 @@ export async function fetchTasksByWOOnce(wo) {
       title: data.title || "",
       start: new Date(data.start),
       end: new Date(data.end),
-
       duration:
         data.duration ||
         Math.round((new Date(data.end) - new Date(data.start)) / 86400000) + 1,
-
+      status: data.status || "Open", // ✅ Added (Crucial for Loading)
       depends: data.depends || "",
       depType: data.depType || "FS",
       row: data.row || 0,
@@ -170,6 +169,7 @@ export async function batchSaveTasks(taskArray) {
           ? t.end.toISOString()
           : new Date(t.end).toISOString(),
       duration,
+      status: t.status || "Open", // ✅ Added (Crucial for Saving)
       depends: t.depends || "",
       depType: t.depType || "FS",
       lagDays: Number(t.lagDays) || 0,
@@ -195,7 +195,7 @@ export async function batchSaveTasks(taskArray) {
         results.created++;
         results.createdMap[i] = newRef.id;
 
-        // ✅ Replace local ID with Firestore ID
+        // Replace local ID with Firestore ID
         t.id = newRef.id;
       }
     } catch (err) {
@@ -211,7 +211,6 @@ export async function batchSaveTasks(taskArray) {
 -------------------------------------------- */
 export async function fetchUniqueWOList() {
   const snap = await getDocs(tasksCol);
-
   const map = new Map();
 
   snap.forEach((d) => {
@@ -228,7 +227,7 @@ export async function fetchUniqueWOList() {
 }
 
 /* -------------------------------------------
-   Save as Templtes
+   Save as Templates
 -------------------------------------------- */
 export async function saveTemplateToFirestore(name, desc, tasks) {
   return addDoc(collection(db, "templates"), {
@@ -245,6 +244,7 @@ export async function loadAllTemplates() {
   snap.forEach((doc) => list.push({ id: doc.id, ...doc.data() }));
   return list;
 }
+
 /* -------------------------------------------
    DELETE Task (REQUIRED)
 -------------------------------------------- */
