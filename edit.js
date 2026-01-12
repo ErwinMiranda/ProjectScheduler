@@ -6,7 +6,7 @@ import { applyDependencies } from "./app.js";
 import { render } from "./renderer.js";
 
 /* ============================================================
-   TITLE EDITING
+   TITLE EDITING (With Inline JS Styling Fix)
 ==============================================================*/
 export function attachTitleEditing() {
   document.querySelectorAll(".task-title").forEach((cell) => {
@@ -18,15 +18,41 @@ export function attachTitleEditing() {
 
       const current = task.title;
 
+      // 1. Temporarily unlock the parent cell so the input isn't clipped
+      cell.style.overflow = "visible";
+      cell.style.position = "relative";
+      cell.style.zIndex = "10000"; // Ensure the cell itself is on top
+
+      // 2. Create the input
       cell.innerHTML = `<input type="text" value="${current}" />`;
       const input = cell.querySelector("input");
+
+      // 3. APPLY STYLES DIRECTLY IN JS (The "Pop-out" Logic)
+      Object.assign(input.style, {
+        position: "absolute",
+        left: "-5px", // Nudge left to align nicely
+        top: "-5px", // Nudge up to center vertically
+        width: "250px", // FORCE WIDE WIDTH (Overlaps Status column)
+        height: "32px", // Fixed comfortable height
+        zIndex: "10001", // Top of the stack
+        background: "#ffffff",
+        border: "2px solid #0d1727ff", // Blue focus ring
+        borderRadius: "4px",
+        padding: "0 8px",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.15)", // Drop shadow for depth
+        outline: "none",
+        fontSize: "13px",
+        fontFamily: "inherit",
+        color: "#0f172a",
+      });
+
       input.focus();
       input.select();
 
       const commit = () => {
         const value = input.value.trim();
         if (!value) {
-          render();
+          render(); // Re-render handles cleaning up styles automatically
           return;
         }
 
@@ -36,7 +62,7 @@ export function attachTitleEditing() {
         // 🔥 LOCAL UPDATE ONLY — no Firestore write yet
         window.dispatchEvent(new CustomEvent("localchange"));
 
-        render();
+        render(); // This rebuilds the DOM, effectively removing our temporary styles
 
         // Refresh dependency dropdown
         import("./app.js").then((m) => m.refreshDependencyDropdown());
