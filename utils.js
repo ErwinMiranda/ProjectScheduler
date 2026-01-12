@@ -236,10 +236,10 @@ export function organizeTasksByWaterfall(taskList) {
   return sortedList;
 }
 /* ============================================================
-   PRINT / EXPORT TO PDF (Fixed Bottom Cut + Text Alignment)
+   PRINT / EXPORT TO PDF (Smart Crop with Sidebar Offset)
    Place in utils.js
 ============================================================ */
-import { tasks } from "./state.js"; // <--- IMPORT TASKS DATA
+import { tasks } from "./state.js";
 
 export function ensurePrintButton() {
   if (document.getElementById("printPdfBtn")) return;
@@ -262,14 +262,15 @@ export function ensurePrintButton() {
       const { jsPDF } = window.jspdf;
 
       /* --------------------------------------------------------
-         1. CALCULATE TAT
+         1. CALCULATE LIMITS & FORMAT DATES
       -------------------------------------------------------- */
       let tatText = "";
+      let fileDateRange = new Date().toISOString().slice(0, 10);
+
+      let minTime = Infinity;
+      let maxTime = -Infinity;
 
       if (tasks && tasks.length > 0) {
-        let minTime = Infinity;
-        let maxTime = -Infinity;
-
         tasks.forEach((t) => {
           const start =
             t.start instanceof Date
@@ -277,7 +278,6 @@ export function ensurePrintButton() {
               : new Date(t.start).getTime();
           const end =
             t.end instanceof Date ? t.end.getTime() : new Date(t.end).getTime();
-
           if (!isNaN(start) && start < minTime) minTime = start;
           if (!isNaN(end) && end > maxTime) maxTime = end;
         });
@@ -285,17 +285,55 @@ export function ensurePrintButton() {
         if (minTime !== Infinity && maxTime !== -Infinity) {
           const diffDays =
             Math.ceil((maxTime - minTime) / (1000 * 60 * 60 * 24)) + 1;
-          tatText = ` | TAT: ${diffDays} Days`;
+          const startStr = new Date(minTime).toISOString().slice(0, 10);
+          const endStr = new Date(maxTime).toISOString().slice(0, 10);
+
+          tatText = ` | ${startStr} to ${endStr} (${diffDays} Days)`;
+          fileDateRange = `${startStr}_to_${endStr}`;
         }
       }
 
       /* --------------------------------------------------------
-         2. CAPTURE GANTT
+         2. SMART CROP CALCULATION (FIXED)
       -------------------------------------------------------- */
       const element = document.querySelector(".gantt-scroll");
       const innerContent = document.querySelector(".gantt-inner");
 
-      const targetWidth = innerContent.scrollWidth;
+      const fullScrollWidth = innerContent.scrollWidth;
+
+      // --- CONFIG ---
+      // We estimate the Sidebar width (Task Name + Date columns)
+      // Task Name (~300px) + Start (~100px) + End (~100px) + Padding ≈ 550px
+      const estimatedSidebarWidth = 550;
+
+      // Calculate Time Ratios
+      const today = new Date().getTime();
+      const renderedEnd = Math.max(today, maxTime);
+      const totalRenderedMs = renderedEnd - minTime; // Total time currently shown
+      const projectMs = maxTime - minTime; // Actual project time
+
+      let targetWidth = fullScrollWidth;
+
+      // Only crop if valid data exists and we have extra empty space
+      if (
+        maxTime < today &&
+        totalRenderedMs > 0 &&
+        fullScrollWidth > estimatedSidebarWidth
+      ) {
+        // 1. Get the width of JUST the timeline part (Total - Sidebar)
+        const timelineFullWidth = fullScrollWidth - estimatedSidebarWidth;
+
+        // 2. Calculate how much of that timeline we actually need
+        const ratio = projectMs / totalRenderedMs;
+        const neededTimelineWidth = timelineFullWidth * ratio;
+
+        // 3. Re-assemble: Sidebar + Needed Timeline + SAFE BUFFER (300px)
+        const calculatedWidth =
+          estimatedSidebarWidth + neededTimelineWidth + 300;
+
+        // 4. Use the smaller of the two (don't expand if chart is small)
+        targetWidth = Math.min(calculatedWidth, fullScrollWidth);
+      }
 
       // 🔥 FIX: ADD 50PX BUFFER TO PREVENT BOTTOM CUT
       const targetHeight = element.scrollHeight + 50;
