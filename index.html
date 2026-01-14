@@ -99,23 +99,45 @@
       <div class="modal-content">
         <h3>Create New Project</h3>
 
-        <label>Work Order (WO)</label>
-        <input type="text" id="newWO" placeholder="e.g., WO-5001" />
+        <div>
+          <div>
+            <label>Work Order (WO)</label>
+            <input type="text" id="newWO" placeholder="e.g., WO-5001" />
+          </div>
+          <div>
+            <label>AC REG</label>
+            <input type="text" id="newACREG" placeholder="e.g., RP-C919" />
+          </div>
+          <div>
+            <label>Project Start Date</label>
+            <input type="date" id="newProjectStart" />
+          </div>
+        </div>
 
-        <label>AC REG</label>
-        <input type="text" id="newACREG" placeholder="e.g., RP-C919" />
         <label>Use Template</label>
         <select id="loadTemplateSelect">
           <option value="">None</option>
         </select>
+
         <div class="task-scroll">
-          <h4 style="margin: 22px 0 8px; font-size: 14px; color: #334155">
-            Initial Tasks
+          <h4
+            style="
+              margin: 22px 0 8px;
+              font-size: 14px;
+              color: #d8dde4;
+              padding-left: 5px;
+            "
+          >
+            Initial Task List
           </h4>
-          <div class="task-header">
+          <div
+            class="task-header-new"
+            style="grid-template-columns: 2fr 0.6fr 0.6fr 0.6fr 32px"
+          >
             <div>Task Name</div>
-            <div>Start</div>
-            <div>End</div>
+            <div>Start Day</div>
+            <div>Dur</div>
+            <div>Dependency</div>
             <div></div>
           </div>
 
