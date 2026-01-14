@@ -179,56 +179,27 @@ export function toDateInput(d) {
   return `${yyyy}-${mm}-${dd}`;
 }
 /* ============================================================
-   HELPER: WATERFALL SORT (DFS Topological)
-   Groups: Parent -> Child -> Grandchild, then sorts by Date
+   HELPER: CHRONOLOGICAL SORT (By Start Date)
+   Replaces the old "Parent -> Child" logic.
 ============================================================ */
 export function organizeTasksByWaterfall(taskList) {
-  // 1. Create Maps for fast lookup
-  const taskMap = new Map();
-  const childrenMap = new Map();
-  const roots = [];
+  // 1. Sort strictly by Start Date
+  const sortedList = [...taskList].sort((a, b) => {
+    const startA = new Date(a.start).getTime();
+    const startB = new Date(b.start).getTime();
 
-  taskList.forEach((t) => {
-    taskMap.set(t.id, t);
-    childrenMap.set(t.id, []);
-  });
-
-  // 2. Identify Roots (No parent, or parent not in this list) vs Children
-  taskList.forEach((t) => {
-    if (t.depends && taskMap.has(t.depends)) {
-      childrenMap.get(t.depends).push(t);
-    } else {
-      roots.push(t);
+    // Primary: Earliest date first
+    if (startA !== startB) {
+      return startA - startB;
     }
+
+    // Secondary: If start dates are equal, shortest duration first
+    const endA = new Date(a.end).getTime();
+    const endB = new Date(b.end).getTime();
+    return endA - endB;
   });
 
-  // 3. Sort Roots by Start Date (The main timeline backbone)
-  roots.sort((a, b) => new Date(a.start) - new Date(b.start));
-
-  // 4. Recursive Traversal (DFS) to build final order
-  const sortedList = [];
-  const visitedIds = new Set();
-
-  function traverse(task) {
-    if (visitedIds.has(task.id)) return;
-    visitedIds.add(task.id);
-    sortedList.push(task);
-
-    // Find children
-    const kids = childrenMap.get(task.id) || [];
-
-    // Sort children by Date so siblings appear chronologically
-    kids.sort((a, b) => new Date(a.start) - new Date(b.start));
-
-    // Visit children immediately to keep them under parent
-    kids.forEach((kid) => traverse(kid));
-  }
-
-  // Execute Traversal
-  roots.forEach((root) => traverse(root));
-
-  // 5. Re-assign Row Numbers based on new order
-  // (This ensures the visual row matches the array index)
+  // 2. Re-assign Row Numbers based on new chronological order
   sortedList.forEach((t, index) => {
     t.row = index;
   });
@@ -236,7 +207,7 @@ export function organizeTasksByWaterfall(taskList) {
   return sortedList;
 }
 /* ============================================================
-   PRINT / EXPORT TO PDF (Smart Crop with Sidebar Offset)
+   PRINT / EXPORT TO PDF (Simplified - Trust Natural Width)
    Place in utils.js
 ============================================================ */
 import { tasks } from "./state.js";
@@ -294,48 +265,13 @@ export function ensurePrintButton() {
       }
 
       /* --------------------------------------------------------
-         2. SMART CROP CALCULATION (FIXED)
+         2. CAPTURE GANTT (Trust the Scroll Width)
       -------------------------------------------------------- */
       const element = document.querySelector(".gantt-scroll");
       const innerContent = document.querySelector(".gantt-inner");
 
-      const fullScrollWidth = innerContent.scrollWidth;
-
-      // --- CONFIG ---
-      // We estimate the Sidebar width (Task Name + Date columns)
-      // Task Name (~300px) + Start (~100px) + End (~100px) + Padding ≈ 550px
-      const estimatedSidebarWidth = 550;
-
-      // Calculate Time Ratios
-      const today = new Date().getTime();
-      const renderedEnd = Math.max(today, maxTime);
-      const totalRenderedMs = renderedEnd - minTime; // Total time currently shown
-      const projectMs = maxTime - minTime; // Actual project time
-
-      let targetWidth = fullScrollWidth;
-
-      // Only crop if valid data exists and we have extra empty space
-      if (
-        maxTime < today &&
-        totalRenderedMs > 0 &&
-        fullScrollWidth > estimatedSidebarWidth
-      ) {
-        // 1. Get the width of JUST the timeline part (Total - Sidebar)
-        const timelineFullWidth = fullScrollWidth - estimatedSidebarWidth;
-
-        // 2. Calculate how much of that timeline we actually need
-        const ratio = projectMs / totalRenderedMs;
-        const neededTimelineWidth = timelineFullWidth * ratio;
-
-        // 3. Re-assemble: Sidebar + Needed Timeline + SAFE BUFFER (300px)
-        const calculatedWidth =
-          estimatedSidebarWidth + neededTimelineWidth + 300;
-
-        // 4. Use the smaller of the two (don't expand if chart is small)
-        targetWidth = Math.min(calculatedWidth, fullScrollWidth);
-      }
-
-      // 🔥 FIX: ADD 50PX BUFFER TO PREVENT BOTTOM CUT
+      // We trust the scrollWidth because the Renderer now sets bounds correctly
+      const targetWidth = innerContent.scrollWidth + 50; // Add small buffer just in case
       const targetHeight = element.scrollHeight + 50;
 
       const canvas = await html2canvas(element, {
@@ -350,7 +286,6 @@ export function ensurePrintButton() {
           // A. Fix Container
           const clonedScroll = clonedDoc.querySelector(".gantt-scroll");
           clonedScroll.style.overflow = "visible";
-          // Ensure the cloned container accepts the buffer height
           clonedScroll.style.height = targetHeight + "px";
           clonedScroll.style.width = targetWidth + "px";
           clonedScroll.style.background = "#ffffff";
@@ -362,8 +297,6 @@ export function ensurePrintButton() {
             clonedHeader.style.top = "auto";
             clonedHeader.style.width = "100%";
           }
-
-          // ... inside onclone: (clonedDoc) => { ...
 
           // C. Hide Add/Del Buttons (Row Content)
           clonedDoc
@@ -386,13 +319,11 @@ export function ensurePrintButton() {
 
             // 2. Widen the "Task Name" header
             if (text.includes("task name")) {
-              div.style.width = "300px"; // Increased width (was 140px)
+              div.style.width = "300px";
             }
           });
 
-          // ... rest of your code (Status Badge fix, Day fix, etc.) ...
-
-          // C. Status Badge (Text Moved Up)
+          // D. Status Badge (Text Moved Up)
           clonedDoc.querySelectorAll("select.task-status").forEach((select) => {
             const badge = clonedDoc.createElement("div");
             const selectedOpt = select.options[select.selectedIndex];
@@ -407,17 +338,15 @@ export function ensurePrintButton() {
             badge.style.alignItems = "center";
             badge.style.justifyContent = "center";
             badge.style.width = "80px";
-            //badge.style.height = "20px";
             badge.style.borderRadius = "6px";
             badge.style.fontSize = "13px";
             badge.style.fontWeight = "600";
-            //badge.style.paddingBottom = "2px"; // Nudge text up
 
             if (select.parentNode)
               select.parentNode.replaceChild(badge, select);
           });
 
-          // D. Day Inputs (Converted to Static Badges)
+          // E. Day Inputs (Converted to Static Badges)
           clonedDoc
             .querySelectorAll(".day-edit-start, .day-edit-end")
             .forEach((input) => {
@@ -433,25 +362,18 @@ export function ensurePrintButton() {
               dayBadge.style.display = "flex";
               dayBadge.style.alignItems = "center";
               dayBadge.style.justifyContent = "center";
-              //dayBadge.style.height = "24px";
-              //dayBadge.style.marginTop = "-1px";
-              //dayBadge.style.paddingBottom = "2px"; // Nudge text up
 
               if (input.parentNode)
                 input.parentNode.replaceChild(dayBadge, input);
             });
 
-          // E. Force Row Height
-          // E. Force Row Height
+          // F. Force Row Widths
           clonedDoc.querySelectorAll(".task-dates").forEach((row) => {
             row.style.width = "200px";
-
-            //row.style.height = "44px";
           });
           clonedDoc.querySelectorAll(".task-title").forEach((row) => {
             row.style.width = "240px";
             row.fontSize = "12px";
-            //row.style.height = "44px";
           });
         },
       });
@@ -504,7 +426,7 @@ export function ensurePrintButton() {
         heightLeft -= pageHeight;
       }
 
-      pdf.save(`Gantt_${woVal}_${new Date().toISOString().slice(0, 10)}.pdf`);
+      pdf.save(`Gantt_${woVal}_${fileDateRange}.pdf`);
     } catch (err) {
       console.error("PDF Error:", err);
       alert("Failed to generate PDF. See console.");
@@ -515,4 +437,38 @@ export function ensurePrintButton() {
   };
 
   headerControls.appendChild(printBtn);
+}
+/* ============================================================
+   HELPER: Refresh Modal Dropdowns (Local DOM)
+============================================================ */
+export function refreshModalDropdowns() {
+  const rows = document.querySelectorAll("#taskRows .task-row");
+
+  // 1. Harvest all names
+  const taskOptions = [];
+  rows.forEach((row, index) => {
+    const titleInput = row.querySelector(".t-title");
+    const name = titleInput.value.trim() || `Row ${index + 1}`;
+    taskOptions.push({ index, name });
+  });
+
+  // 2. Update each dropdown
+  rows.forEach((row, currentRowIndex) => {
+    const select = row.querySelector(".t-dep");
+    const currentSelection = select.value; // Remember what was picked
+
+    // Reset options
+    select.innerHTML = `<option value="">No Dependency</option>`;
+
+    // Add options (exclude self)
+    taskOptions.forEach((opt) => {
+      if (opt.index !== currentRowIndex) {
+        // We use the INDEX as the value, but show the NAME
+        select.innerHTML += `<option value="${opt.index}">${opt.name}</option>`;
+      }
+    });
+
+    // Restore selection if possible
+    select.value = currentSelection;
+  });
 }
