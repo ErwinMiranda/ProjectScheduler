@@ -21,6 +21,7 @@ import {
   hideLoading,
   organizeTasksByWaterfall,
   ensurePrintButton,
+  refreshModalDropdowns,
 } from "./utils.js";
 import {
   updateTaskList,
@@ -183,36 +184,76 @@ function updateAcRegFromWO(wo) {
    DEPENDENCY ENGINE (FS + SS + lag + lead)
 ============================================================ */
 export function applyDependencies() {
-  const map = Object.fromEntries(tasks.map((t) => [t.id, t]));
-
   let changed = true;
-  let safety = 0;
+  let loops = 0;
 
-  while (changed && safety++ < 50) {
+  // Propagate changes (limit loops to prevent infinite cycles)
+  while (changed && loops < 100) {
     changed = false;
+    loops++;
 
-    tasks.forEach((child) => {
-      if (!child.depends) return;
+    tasks.forEach((t) => {
+      // Skip if no dependency
+      if (!t.depends) return;
 
-      const parent = map[child.depends];
+      const parent = tasks.find((p) => p.id === t.depends);
       if (!parent) return;
 
-      const lag = child.lagDays || 0;
-      const lead = child.leadDays || 0;
+      // 1. Get Dependency Configuration
+      const lag = Number(t.lagDays) || 0;
+      const lead = Number(t.leadDays) || 0;
+      const net = lag - lead;
+      const type = t.depType || "FS"; // Default to Finish-to-Start
 
-      let minStart;
+      // 2. Calculate the STRICT Target Date
+      let targetStart;
 
-      if (child.depType === "SS") {
-        minStart = addDays(parent.start, lag - lead);
+      if (type === "SS") {
+        // Start-to-Start: Parent Start + Net Offset
+        targetStart = addDays(parent.start, net);
       } else {
-        minStart = addDays(parent.end, 1 + lag - lead);
+        // Finish-to-Start (FS): Parent End + 1 Day + Net Offset
+        targetStart = addDays(parent.end, 1 + net);
       }
 
-      if (child.start < minStart) {
-        const dur = daysBetween(child.start, child.end) + 1;
-        child.start = minStart;
-        child.end = addDays(child.start, dur - 1);
-        changed = true;
+      // 3. Apply Constraints
+      const currentStartMs = t.start.getTime();
+      const targetStartMs = targetStart.getTime();
+      const duration = daysBetween(t.start, t.end);
+
+      if (type === "FS") {
+        /* ------------------------------------------------------
+           [STRICT MODE] FOR FS
+           User Request: "Cannot set it before and after"
+           Behavior: The task is LOCKED to the target date.
+           Moving it requires changing the Lag/Lead value.
+        ------------------------------------------------------ */
+        if (currentStartMs !== targetStartMs) {
+          t.start = targetStart;
+          t.end = addDays(targetStart, duration);
+          changed = true;
+        }
+      } else {
+        /* ------------------------------------------------------
+           [HYBRID MODE] FOR SS (Start-to-Start)
+           If Lag/Lead exists: Strict (Locked).
+           If 0 Lag: Flexible (Can be later, but not earlier).
+        ------------------------------------------------------ */
+        if (lag !== 0 || lead !== 0) {
+          // Strict if offset exists
+          if (currentStartMs !== targetStartMs) {
+            t.start = targetStart;
+            t.end = addDays(targetStart, duration);
+            changed = true;
+          }
+        } else {
+          // Flexible "Floor" if no offset (Standard behavior)
+          if (currentStartMs < targetStartMs) {
+            t.start = targetStart;
+            t.end = addDays(targetStart, duration);
+            changed = true;
+          }
+        }
       }
     });
   }
@@ -582,45 +623,126 @@ document.getElementById("cancelProjectBtn").onclick = () => {
   window.location.reload();
 };
 
-/* Utility to add a blank row */
+/* Utility to add a task row */
 function addTaskRow() {
   const container = document.getElementById("taskRows");
-
   const row = document.createElement("div");
   row.className = "task-row";
+  row.style.gridTemplateColumns = "2fr 0.6fr 0.6fr 0.6fr 32px";
 
   row.innerHTML = `
-    <input type="text" placeholder="Task name">
-    <input type="date">
-    <input type="date">
+    <input type="text" placeholder="Task name" class="t-title">
+    <input type="number" min="1" value="1" class="t-start-day" placeholder="Day">
+    <input type="number" min="1" value="1" class="t-dur" placeholder="Dur">
+    <select class="t-dep"></select>
     <button class="delete-row">✕</button>
   `;
 
-  row.querySelector(".delete-row").onclick = () => row.remove();
+  // 1. Live Update: When title changes, update other dropdowns
+  const titleInput = row.querySelector(".t-title");
+  titleInput.addEventListener("input", refreshModalDropdowns);
+
+  // 2. Delete Logic
+  row.querySelector(".delete-row").onclick = () => {
+    row.remove();
+    refreshModalDropdowns(); // Re-index list after delete
+  };
+
   container.appendChild(row);
+
+  // 3. Refresh immediately to populate the new dropdown
+  refreshModalDropdowns();
 }
 
 document.getElementById("addTaskRowBtn").onclick = addTaskRow;
 
 /* ============================================================
-   TEMPLATE SELECTED → SHOW DATE PICKER
+   TEMPLATE SELECTED -> LOAD ROWS INSTANTLY (No Popup)
 ============================================================ */
 document.getElementById("loadTemplateSelect").onchange = async () => {
-  const id = loadTemplateSelect.value;
+  const select = document.getElementById("loadTemplateSelect");
+  const id = select.value;
+  const container = document.getElementById("taskRows");
+
+  container.innerHTML = "";
 
   if (!id) {
-    taskRows.innerHTML = "";
     addTaskRow();
     return;
   }
 
-  document.getElementById("templateStartDateModal").hidden = false;
+  showLoading("Loading Template...");
 
-  // Load template for use after choosing start date
-  const templates = await loadAllTemplates();
-  window.activeTemplate = templates.find((t) => t.id === id);
+  try {
+    const { loadAllTemplates } = await import("./firebase.js");
+    const templates = await loadAllTemplates();
+    const tpl = templates.find((t) => t.id === id);
+
+    if (!tpl || !tpl.tasks) {
+      hideLoading();
+      return;
+    }
+
+    // A. Create All DOM Elements First
+    tpl.tasks.forEach((task) => {
+      const row = document.createElement("div");
+      row.className = "task-row";
+      row.style.gridTemplateColumns = "2fr 0.6fr 0.6fr 0.6fr 32px";
+
+      const startDay =
+        (typeof task.startOffset === "number" ? task.startOffset : 0) + 1;
+      const duration = task.duration || 1;
+
+      row.innerHTML = `
+        <input type="text" class="t-title" value="${task.title}">
+        <input type="number" class="t-start-day" min="1" value="${startDay}">
+        <input type="number" class="t-dur" min="1" value="${duration}">
+        <select class="t-dep"></select>
+        <button class="delete-row">✕</button>
+      `;
+
+      // Store dependency target INDEX temporarily in dataset
+      // We can't set select.value yet because the options don't exist
+      if (task.dependsIndex !== undefined && task.dependsIndex >= 0) {
+        row.dataset.targetIndex = task.dependsIndex;
+      }
+
+      // Live Listeners
+      row
+        .querySelector(".t-title")
+        .addEventListener("input", refreshModalDropdowns);
+      row.querySelector(".delete-row").onclick = () => {
+        row.remove();
+        refreshModalDropdowns();
+      };
+
+      // Keep hidden data
+      row.dataset.depType = task.depType || "FS";
+      row.dataset.lag = task.lagDays || 0;
+      row.dataset.lead = task.leadDays || 0;
+      row.dataset.color = task.color || "";
+
+      container.appendChild(row);
+    });
+
+    // B. Refresh All Dropdowns (Now that all titles exist)
+    refreshModalDropdowns();
+
+    // C. Set Selected Values
+    const rows = document.querySelectorAll("#taskRows .task-row");
+    rows.forEach((row) => {
+      if (row.dataset.targetIndex) {
+        const select = row.querySelector(".t-dep");
+        select.value = row.dataset.targetIndex;
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    alert("Error loading template");
+  } finally {
+    hideLoading();
+  }
 };
-
 /* ============================================================
    TEMPLATE START DATE CONFIRM
    → Build TaskRows using dependency rules
@@ -628,67 +750,46 @@ document.getElementById("loadTemplateSelect").onchange = async () => {
 document.getElementById("confirmStartDateBtn").onclick = () => {
   const modal = document.getElementById("templateStartDateModal");
   const container = document.getElementById("taskRows");
+  const projectStartInput = document.getElementById("newProjectStart"); // The new anchor field
+  const popupDateVal = document.getElementById("templateStartDate").value;
 
-  const startInput = document.getElementById("templateStartDate").value;
-  if (!startInput) return alert("Select a start date.");
+  if (!popupDateVal) return alert("Select a start date.");
 
-  const projectStart = new Date(startInput);
+  // 1. Set the main Project Start Date anchor
+  projectStartInput.value = popupDateVal;
+
   modal.hidden = true;
   container.innerHTML = "";
 
   const tpl = window.activeTemplate;
-  const builtTasks = []; // store { start, end } for dependency resolution
+  if (!tpl || !tpl.tasks) return;
 
-  // Helper to add days (ensure this function is available in scope or import it)
-  // function addDays(d, n) { ... }
-
-  tpl.tasks.forEach((task, idx) => {
-    // ---------------------------------------------------------
-    // 1. BASE START: Apply Offset if available, otherwise Project Start
-    // ---------------------------------------------------------
-    let start;
-    if (typeof task.startOffset === "number") {
-      start = addDays(projectStart, task.startOffset);
-    } else {
-      start = new Date(projectStart);
-    }
-
-    // ---------------------------------------------------------
-    // 2. DEPENDENCY OVERRIDE: If linked, parent dictates start
-    // ---------------------------------------------------------
-    if (task.dependsIndex != null && task.dependsIndex >= 0) {
-      const parent = builtTasks[task.dependsIndex];
-
-      if (parent) {
-        if (task.depType === "SS") {
-          start = addDays(parent.start, task.lagDays - task.leadDays);
-        } else {
-          // Default FS (Finish-to-Start)
-          start = addDays(parent.end, 1 + task.lagDays - task.leadDays);
-        }
-      }
-    }
-
-    // Calculate End based on duration
-    const end = addDays(start, task.duration - 1);
-
-    // Save for future children to reference
-    builtTasks.push({ start, end });
-
-    // ---------------------------------------------------------
-    // 3. RENDER ROW
-    // ---------------------------------------------------------
+  // 2. Load Tasks with Relative Numbers
+  tpl.tasks.forEach((task) => {
     const row = document.createElement("div");
     row.className = "task-row";
-    row.dataset.start = start.toISOString();
-    row.dataset.end = end.toISOString();
+    row.style.gridTemplateColumns = "2fr 0.8fr 0.8fr 32px";
+
+    // Logic:
+    // If template has 'startOffset' (e.g., 0 for Day 1), we display Offset + 1.
+    // If no offset, default to Day 1.
+    const startDay =
+      (typeof task.startOffset === "number" ? task.startOffset : 0) + 1;
+    const duration = task.duration || 1;
 
     row.innerHTML = `
-      <input type="text" value="${task.title}">
-      <input type="date" value="${start.toISOString().slice(0, 10)}">
-      <input type="date" value="${end.toISOString().slice(0, 10)}">
+      <input type="text" class="t-title" value="${task.title}">
+      <input type="number" class="t-start-day" min="1" value="${startDay}">
+      <input type="number" class="t-dur" min="1" value="${duration}">
       <button class="delete-row">✕</button>
     `;
+
+    // Store hidden dependency data on the row element itself
+    row.dataset.depIndex = task.dependsIndex ?? -1;
+    row.dataset.depType = task.depType || "FS";
+    row.dataset.lag = task.lagDays || 0;
+    row.dataset.lead = task.leadDays || 0;
+    row.dataset.color = task.color || "";
 
     row.querySelector(".delete-row").onclick = () => row.remove();
     container.appendChild(row);
@@ -699,42 +800,50 @@ document.getElementById("confirmStartDateBtn").onclick = () => {
 document.getElementById("cancelStartDateBtn").onclick = () => {
   document.getElementById("templateStartDateModal").hidden = true;
 };
-
 /* ============================================================
-   CREATE PROJECT FROM TEMPLATE
+   CREATE PROJECT (Final Fix: Variable Name & Dropdown Logic)
 ============================================================ */
+
 document.getElementById("createProjectBtn").onclick = async () => {
   const newWO = document.getElementById("newWO");
   const newACREG = document.getElementById("newACREG");
+  const projectStartInput = document.getElementById("newProjectStart");
 
   const WO = newWO.value.trim();
   const ACREG = newACREG.value.trim();
+  const anchorDateVal = projectStartInput.value;
+
   if (!WO || !ACREG) return alert("Please fill WO & AC REG.");
+  if (!anchorDateVal) return alert("Please select a Project Start Date.");
 
   const rows = document.querySelectorAll("#taskRows .task-row");
-  if (rows.length === 0)
-    return alert("No tasks to save! Load a template first.");
+  if (rows.length === 0) return alert("No tasks to save!");
 
-  showLoading("Structuring Waterfall Schedule...");
+  const anchorDate = new Date(anchorDateVal + "T00:00:00");
+
+  showLoading("Structuring Schedule...");
 
   try {
     const tasksLocal = [];
 
     /* -----------------------------------------------------------
-       1. READ DATA FROM PREVIEW ROWS
+       1. READ INPUTS
     ----------------------------------------------------------- */
     rows.forEach((row, index) => {
-      const inputs = row.querySelectorAll("input");
-      const title = inputs[0].value;
-      const startVal = inputs[1].value;
-      const endVal = inputs[2].value;
+      const title = row.querySelector(".t-title").value.trim() || "Untitled";
+      const startDay = parseInt(row.querySelector(".t-start-day").value) || 1;
+      const duration = parseInt(row.querySelector(".t-dur").value) || 1;
 
-      const start = new Date(startVal);
-      const end = new Date(endVal);
-      const duration = daysBetween(start, end) + 1;
+      // READ DROPDOWN: Value is the Target Index (0, 1, 2...)
+      const select = row.querySelector(".t-dep");
+      let depIndex = -1;
+      if (select.value !== "") {
+        depIndex = parseInt(select.value);
+      }
 
-      const template = window.activeTemplate;
-      const tpl = template ? template.tasks[index] : {};
+      // Calculation
+      const start = addDays(anchorDate, startDay - 1);
+      const end = addDays(start, duration - 1);
       const tempId = "local-" + Date.now() + "-" + index;
 
       tasksLocal.push({
@@ -746,122 +855,69 @@ document.getElementById("createProjectBtn").onclick = async () => {
         start,
         end,
         duration,
-        status: "Open", // <--- ADD THIS LINE
-        dependsIndex: tpl?.dependsIndex ?? -1,
-        depType: tpl?.depType || "FS",
-        lagDays: tpl?.lagDays || 0,
-        leadDays: tpl?.leadDays || 0,
-        row: 0,
-        color: tpl?.color || "",
-        // We use this to map local dependencies before we have full graph
+        status: "Open",
+
+        dependsIndex: depIndex,
+        depType: row.dataset.depType || "FS",
+        lagDays: parseInt(row.dataset.lag || 0),
+        leadDays: parseInt(row.dataset.lead || 0),
+        color: row.dataset.color || "",
+
+        // Map Index -> TempID immediately
         localDepId:
-          tpl?.dependsIndex >= 0 && tasksLocal[tpl.dependsIndex]
-            ? tasksLocal[tpl.dependsIndex].tempId
+          depIndex >= 0 && tasksLocal[depIndex]
+            ? tasksLocal[depIndex].tempId
             : "",
       });
     });
 
-    // Fix local dependency strings immediately for the sort graph
+    // Link Local Dependencies
     tasksLocal.forEach((t) => {
-      t.depends = t.localDepId; // Assign tempId to depends
+      t.depends = t.localDepId;
     });
 
     /* -----------------------------------------------------------
-       2. WATERFALL CHAIN SORT (DFS Topological)
-       This Groups: Parent -> Child -> Grandchild
+       2. WATERFALL SORT
     ----------------------------------------------------------- */
-    const existingTasks = await import("./firebase.js").then((m) =>
-      m.fetchTasksByWOOnce(WO)
-    );
+    const existing = await fetchTasksByWOOnce(WO);
+    const allTasks = [...existing, ...tasksLocal];
+    const sorted = organizeTasksByWaterfall(allTasks);
 
-    // Combine ALL tasks (Existing + New)
-    const allTasks = [...existingTasks, ...tasksLocal];
-
-    // A. Build Helper Maps
-    const taskMap = new Map();
-    const childrenMap = new Map();
-    const roots = [];
-
-    allTasks.forEach((t) => {
-      taskMap.set(t.id, t);
-      if (!childrenMap.has(t.id)) childrenMap.set(t.id, []);
-    });
-
-    // B. Identify Roots and Children
-    allTasks.forEach((t) => {
-      // Check if task has a dependency that actually exists in this list
-      if (t.depends && taskMap.has(t.depends)) {
-        // It is a child
-        childrenMap.get(t.depends).push(t);
-      } else {
-        // It is a root (No parent, or parent is not in this project list)
-        roots.push(t);
-      }
-    });
-
-    // C. Sort Roots by Date (The main timeline backbone)
-    roots.sort((a, b) => a.start - b.start);
-
-    // D. Recursive Traversal (DFS) to build final order
-    const finalSortedTasks = [];
-    const visitedIds = new Set();
-
-    function traverse(task) {
-      if (visitedIds.has(task.id)) return;
-      visitedIds.add(task.id);
-      finalSortedTasks.push(task);
-
-      // Find children
-      const kids = childrenMap.get(task.id) || [];
-
-      // Sort children by Date (Waterfall effect within the chain)
-      kids.sort((a, b) => a.start - b.start);
-
-      // Visit children immediately (Keep them grouped with parent)
-      kids.forEach((kid) => traverse(kid));
-    }
-
-    // Execute Traversal starting from Roots
-    roots.forEach((root) => traverse(root));
-
-    // E. Apply the new Row Order
-    const existingTasksToUpdate = [];
-
-    finalSortedTasks.forEach((t, index) => {
+    // Filter which tasks need saving
+    const toSave = [];
+    sorted.forEach((t, i) => {
       const oldRow = t.row;
-      t.row = index; // Apply 0, 1, 2... based on Chain Sort
-
-      // If existing task moved, mark for update
-      if (!String(t.id).startsWith("local-") && oldRow !== index) {
-        existingTasksToUpdate.push(t);
+      t.row = i;
+      if (String(t.id).startsWith("local-") || oldRow !== i) {
+        toSave.push(t);
       }
     });
 
     /* -----------------------------------------------------------
-       3. SAVE EXECUTION
+       3. SAVE & ID SWAP (FIXED)
     ----------------------------------------------------------- */
-    // A. Save NEW Tasks
-    const result = await import("./firebase.js").then((m) =>
-      m.batchSaveTasks(tasksLocal)
-    );
+    const result = await batchSaveTasks(toSave);
 
-    Object.entries(result.createdMap).forEach(([indexStr, newId]) => {
-      tasksLocal[indexStr].finalId = newId;
+    Object.entries(result.createdMap).forEach(([idx, newId]) => {
+      // ✅ FIX: Use 'toSave' here, not 'tasksToSave'
+      if (toSave[idx]) {
+        toSave[idx].finalId = newId;
+
+        // Find original object to update its finalId too
+        const original = tasksLocal.find(
+          (t) => t.tempId === toSave[idx].tempId
+        );
+        if (original) original.finalId = newId;
+      }
     });
 
-    // B. Update EXISTING tasks (Row re-ordering)
-    if (existingTasksToUpdate.length > 0) {
-      await import("./firebase.js").then((m) =>
-        m.batchSaveTasks(existingTasksToUpdate)
-      );
-    }
-
     /* -----------------------------------------------------------
-       4. FIX DEPENDENCIES (TempID -> RealID)
+       4. FIX REAL DEPENDENCIES
     ----------------------------------------------------------- */
     const updates = [];
     tasksLocal.forEach((t) => {
       t.id = t.finalId;
+      // If depends on a local ID, swap for final ID
       if (t.depends && t.depends.startsWith("local-")) {
         const parent = tasksLocal.find((p) => p.tempId === t.depends);
         if (parent && parent.finalId) {
@@ -873,20 +929,17 @@ document.getElementById("createProjectBtn").onclick = async () => {
       }
     });
 
-    if (updates.length > 0) {
-      await import("./firebase.js").then((m) => m.batchSaveTasks(updates));
-    }
+    if (updates.length > 0) await batchSaveTasks(updates);
 
     /* -----------------------------------------------------------
-       5. RELOAD UI
+       5. RELOAD
     ----------------------------------------------------------- */
-    await import("./app.js").then((m) => m.loadWOList());
+    await loadWOList();
     const woFilter = document.getElementById("woFilter");
     woFilter.value = WO;
     woFilter.dispatchEvent(new Event("change"));
 
     hideLoading();
-    //alert("Project structured with Waterfall Dependencies!");
     document.getElementById("projectModal").hidden = true;
   } catch (err) {
     console.error(err);
@@ -894,6 +947,7 @@ document.getElementById("createProjectBtn").onclick = async () => {
     alert("Error: " + err.message);
   }
 };
+
 /* ============================================================
    TAT (Turn-Around Time) Computation
 ============================================================ */
