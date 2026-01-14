@@ -18,7 +18,7 @@ import { deleteTask, insertTaskBelow } from "./app.js";
 let scale = 36;
 
 /* --------------------------------------------------------------------------
-   Persistent bottom-right tooltip (single element)
+   Persistent bottom-right tooltip (Dark Mode)
 ----------------------------------------------------------------------------*/
 function ensureTooltip() {
   let tip = document.querySelector(".bar-tooltip--fixed");
@@ -30,26 +30,26 @@ function ensureTooltip() {
     position: "fixed",
     right: "12px",
     bottom: "12px",
-    background: "rgba(255,255,255,0.98)",
-    border: "1px solid rgba(0,0,0,0.08)",
-    boxShadow: "0 6px 18px rgba(15,23,42,0.06)",
-    padding: "8px 10px",
+    // DARK MODE STYLES
+    background: "#1e293b", // Dark Slate (Background)
+    border: "1px solid #334155", // Subtle dark border
+    boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.5)", // Strong shadow
+    color: "#f1f5f9", // White-ish text
+    padding: "10px 12px",
     borderRadius: "8px",
     fontSize: "12px",
-    color: "#0c2868",
     zIndex: 2000,
     maxWidth: "320px",
     pointerEvents: "none",
     opacity: "0",
     transition: "opacity 160ms ease",
     whiteSpace: "normal",
-    lineHeight: "1.3",
+    lineHeight: "1.4",
   });
 
   document.body.appendChild(tip);
   return tip;
 }
-
 const LAST_COLOR_KEY = "lastBarColor";
 const DEFAULT_BAR_COLOR = "#2563eb";
 
@@ -160,16 +160,20 @@ function computeMinDate() {
 }
 
 /* --------------------------------------------------------------------------
-   DRAW TODAY LINE
+   DRAW TODAY LINE (Only if inside project range)
 ----------------------------------------------------------------------------*/
-function drawTodayLine(minDate, scale, container) {
+function drawTodayLine(minDate, maxDate, scale, container) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const chartStart = new Date(minDate);
   chartStart.setHours(0, 0, 0, 0);
 
-  if (today < chartStart) return;
+  const chartEnd = new Date(maxDate);
+  chartEnd.setHours(0, 0, 0, 0);
+
+  // FIX: Stop if today is before start OR after end
+  if (today < chartStart || today > chartEnd) return;
 
   const diffTime = today - chartStart;
   const diffDays = diffTime / (1000 * 60 * 60 * 24);
@@ -179,6 +183,8 @@ function drawTodayLine(minDate, scale, container) {
   const line = document.createElement("div");
   line.className = "today-line";
   line.style.left = leftPos + "px";
+  // Optional: Add a label on top of the line
+  line.title = `Today: ${today.toLocaleDateString()}`;
 
   container.appendChild(line);
 }
@@ -193,7 +199,7 @@ export function render() {
   const depOverlay = document.getElementById("depOverlay");
 
   const minDate = computeMinDate();
-  const [minD, maxD] = getBounds(minDate);
+  const [minD, maxD] = getBounds(minDate); // We get maxD here
   const totalDays = daysBetween(minD, maxD) + 1;
   const width = totalDays * scale;
 
@@ -207,7 +213,8 @@ export function render() {
   buildTimelineHeader(timelineHeader, minD, totalDays);
   buildRows(taskLeftList, rowsRight, minD, width, criticalSet);
 
-  drawTodayLine(minD, scale, depOverlay);
+  // FIX: Pass 'maxD' here so it knows when to stop drawing
+  drawTodayLine(minD, maxD, scale, depOverlay);
 
   requestAnimationFrame(() => {
     syncRowHeights(taskLeftList, rowsRight);
@@ -217,34 +224,55 @@ export function render() {
 }
 
 /* --------------------------------------------------------------------------
-   Calculate timeline bounds
+   Calculate timeline bounds (Strict Data Range)
 ----------------------------------------------------------------------------*/
 function getBounds(minOverride) {
+  // If no tasks, show a default small window around today
   if (!tasks.length) return [addDays(new Date(), -3), addDays(new Date(), 10)];
+
   let min = tasks[0].start;
   let max = tasks[0].end;
+
   tasks.forEach((t) => {
     if (t.start < min) min = t.start;
     if (t.end > max) max = t.end;
   });
+
+  // Returns exactly the project limits + small buffer
   return [minOverride, addDays(max, 3)];
 }
 
 /* --------------------------------------------------------------------------
-   Build timeline header
+   Build timeline header (Month, Date, AND D-Day)
 ----------------------------------------------------------------------------*/
 function buildTimelineHeader(timelineHeader, minDate, totalDays) {
   const wrapper = document.createElement("div");
   wrapper.style.display = "flex";
   wrapper.style.flexDirection = "column";
 
+  // 1. Month Row
   const monthRow = document.createElement("div");
   monthRow.style.display = "flex";
   monthRow.style.height = "20px";
+  monthRow.style.backgroundColor = "#f8fafc";
+  monthRow.style.borderBottom = "1px solid #e2e8f0";
 
+  // 2. Day Row (Actual Date)
   const dayRow = document.createElement("div");
   dayRow.style.display = "flex";
-  dayRow.style.height = "30px";
+  dayRow.style.height = "24px"; // Slightly reduced height
+  dayRow.style.backgroundColor = "#ffffff";
+  dayRow.style.borderBottom = "1px solid #f1f5f9";
+
+  // 3. NEW: Relative "D-Day" Row
+  const relRow = document.createElement("div");
+  relRow.style.display = "flex";
+  relRow.style.height = "20px";
+  relRow.style.backgroundColor = "#f8fafc";
+  relRow.style.borderBottom = "1px solid #cbd5e1"; // Stronger border for grid separation
+
+  // Get Project Start Date to calculate D1, D2...
+  const projectStart = getProjectStartDate();
 
   let currentMonth = minDate.getMonth();
   let currentYear = minDate.getFullYear();
@@ -253,16 +281,49 @@ function buildTimelineHeader(timelineHeader, minDate, totalDays) {
   for (let i = 0; i < totalDays; i++) {
     const d = addDays(minDate, i);
 
+    // --- DAY CELL (1, 2, 3...) ---
     const dayCell = document.createElement("div");
     dayCell.classList.add("day-cell");
     dayCell.style.width = scale + "px";
     dayCell.style.display = "flex";
     dayCell.style.alignItems = "center";
     dayCell.style.justifyContent = "center";
+    dayCell.style.fontSize = "12px";
+    dayCell.style.fontWeight = "600";
+    dayCell.style.color = "#334155";
     dayCell.textContent = d.getDate();
-
+    // Highlight weekends slightly
+    if (d.getDay() === 0 || d.getDay() === 6) {
+      dayCell.style.backgroundColor = "#e3e5e9ff";
+      dayCell.style.color = "#94a3b8";
+    }
     dayRow.appendChild(dayCell);
 
+    // --- RELATIVE CELL (D1, D2...) ---
+    const relCell = document.createElement("div");
+    relCell.style.width = scale + "px";
+    relCell.style.display = "flex";
+    relCell.style.alignItems = "center";
+    relCell.style.justifyContent = "center";
+    relCell.style.fontSize = "10px";
+    relCell.style.color = "#64748b";
+
+    // Calculate Day Number
+    const dayNum = daysBetween(projectStart, d) + 1;
+
+    // Only show "D#" if it's Day 1 or later
+
+    relCell.textContent = `D${dayNum}`;
+    relCell.style.fontWeight = "500";
+
+    // Highlight weekends in this row too
+    if (d.getDay() === 0 || d.getDay() === 6) {
+      relCell.style.backgroundColor = "#e3e5e9ff";
+    }
+
+    relRow.appendChild(relCell);
+
+    // --- MONTH CELL LOGIC ---
     const month = d.getMonth();
     const year = d.getFullYear();
     const isBoundary =
@@ -275,13 +336,16 @@ function buildTimelineHeader(timelineHeader, minDate, totalDays) {
       monthCell.style.width = blockLength * scale + "px";
       monthCell.style.display = "flex";
       monthCell.style.alignItems = "center";
-      monthCell.style.justifyContent = "center";
+      monthCell.style.justifyContent = "center"; // Center label
       monthCell.style.fontWeight = "bold";
-      monthCell.style.fontSize = "12px";
+      monthCell.style.fontSize = "11px";
+      monthCell.style.color = "#475569";
+      monthCell.style.borderRight = "1px solid #e2e8f0";
+      monthCell.style.boxSizing = "border-box";
 
       const blockDate = addDays(minDate, monthStartIndex);
       monthCell.textContent = blockDate.toLocaleString("default", {
-        month: "short",
+        month: "long",
         year: "numeric",
       });
       monthRow.appendChild(monthCell);
@@ -291,8 +355,10 @@ function buildTimelineHeader(timelineHeader, minDate, totalDays) {
       monthStartIndex = i;
     }
   }
+
   wrapper.appendChild(monthRow);
   wrapper.appendChild(dayRow);
+  wrapper.appendChild(relRow); // Add the new row
   timelineHeader.appendChild(wrapper);
 }
 
@@ -566,22 +632,42 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
         tooltip.style.opacity = 0;
         return;
       }
+
+      // --- DEPENDENCY INFO ---
       const parent = tasks.find((x) => x.id === t.depends);
       const lag = Number.isFinite(t.lagDays) ? t.lagDays : 0;
       const lead = Number.isFinite(t.leadDays) ? t.leadDays : 0;
-      const net = lag - lead;
+      const depType = t.depType || "FS";
+
+      let depHtml = "";
+      if (t.depends && parent) {
+        // Dark mode divider: #334155
+        // Label color: #94a3b8
+        depHtml = `
+        <div style="margin-top:6px; padding-top:6px; border-top:1px solid #334155;">
+           <div><span style="color:#94a3b8">Type:</span> <strong>${depType}</strong></div>
+           <div><span style="color:#94a3b8">Lag:</span> <strong>${lag}d</strong> &nbsp; <span style="color:#94a3b8">Lead:</span> <strong>${lead}d</strong></div>
+        </div>`;
+      }
+
+      // Dark Mode Colors:
+      // Title: #ffffff
+      // Main Text: #cbd5e1 (Light Grey)
+      // Labels: #94a3b8 (Dim Grey)
       tooltip.innerHTML = `
-        <div style="font-weight:600; margin-bottom:6px;">${escapeHtml(
+        <div style="font-weight:600; margin-bottom:4px; font-size:13px; color:#ffffff;">${escapeHtml(
           t.title
         )}</div>
-        <div style="font-size:12px; color:#334155; line-height:1.4">
-          <div><span style="color:#64748b">Status:</span> <strong>${
+        <div style="font-size:12px; color:#cbd5e1; line-height:1.4">
+          <div><span style="color:#94a3b8">Status:</span> <strong>${
             t.status
           }</strong></div>
-          <div><span style="color:#64748b">Dates:</span> <strong>Day ${
+          <div><span style="color:#94a3b8">Dates:</span> <strong>Day ${
             daysBetween(projectStart, t.start) + 1
           } - Day ${daysBetween(projectStart, t.end) + 1}</strong></div>
+          ${depHtml}
         </div>`;
+
       tooltip.style.opacity = "1";
     });
     bar.addEventListener("mouseleave", () => {
@@ -615,7 +701,7 @@ function syncRowHeights(leftContainer, rightContainer) {
   const leftRows = leftContainer.querySelectorAll(".unified-row");
   const rightRows = rightContainer.querySelectorAll(".unified-row");
   rightRows.forEach((rightRow, i) => {
-    const leftH = leftRows[i]?.offsetHeight || 44;
+    const leftH = leftRows[i]?.offsetHeight || 35;
     rightRow.style.height = leftH + "px";
     const grid = rightRow.querySelector(".row-grid");
     if (grid) grid.style.height = leftH + "px";
