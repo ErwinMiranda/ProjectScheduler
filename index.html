@@ -39,7 +39,34 @@
           <button id="saveTemplateBtn" class="btn">Save as Template</button>
         </div>
       </div>
-
+      <div style="display: flex; gap: 10px">
+        <button
+          id="btnSortDate"
+          style="
+            padding: 6px 12px;
+            background: #334155;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+          "
+        >
+          Sort: Start Date
+        </button>
+        <button
+          id="btnSortSkill"
+          style="
+            padding: 6px 12px;
+            background: #334155;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+          "
+        >
+          Sort: WaterFall
+        </button>
+      </div>
       <!-- GANTT unified panel -->
       <div
         class="panel gantt-panel"
@@ -52,7 +79,8 @@
                 Add/Del
               </div>
               <div style="width: 15px">#</div>
-              <div style="width: 280px">Task Name</div>
+              <div style="width: 240px">Task Name</div>
+              <div style="width: 60px">Skill</div>
               <div style="width: 100px; text-align: center">Status</div>
               <div style="width: 80px">Dur</div>
               <div style="width: 200px">Start → End</div>
@@ -100,15 +128,15 @@
         <h3>Create New Project</h3>
 
         <div>
-          <div>
+          <div style="width: 240px">
             <label>Work Order (WO)</label>
             <input type="text" id="newWO" placeholder="e.g., WO-5001" />
           </div>
-          <div>
+          <div style="width: 240px">
             <label>AC REG</label>
             <input type="text" id="newACREG" placeholder="e.g., RP-C919" />
           </div>
-          <div>
+          <div style="width: 240px">
             <label>Project Start Date</label>
             <input type="date" id="newProjectStart" />
           </div>
@@ -132,12 +160,13 @@
           </h4>
           <div
             class="task-header-new"
-            style="grid-template-columns: 2fr 0.6fr 0.6fr 0.6fr 32px"
+            style="grid-template-columns: 1fr 60px 50px 100px 80px 30px"
           >
             <div>Task Name</div>
             <div>Start Day</div>
             <div>Dur</div>
             <div>Dependency</div>
+            <div>Skill</div>
             <div></div>
           </div>
 
@@ -189,8 +218,6 @@
       </div>
     </div>
 
-    <!-- Minimalist loading overlay -->
-    <!-- Minimalist Loading Overlay -->
     <div id="loadingOverlay">
       <div class="spinner"></div>
       <div id="loadingText">Loading...</div>
