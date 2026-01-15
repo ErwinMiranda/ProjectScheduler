@@ -10,6 +10,7 @@ import {
   attachDurationEditing,
   attachTitleEditing,
   attachDateEditing,
+  attachSkillEditing, // <--- 1. ADD IMPORT HERE
 } from "./edit.js";
 import { pushHistory } from "./state.js";
 import { showCriticalPath } from "./state.js";
@@ -61,71 +62,110 @@ function setLastUsedColor(color) {
   localStorage.setItem(LAST_COLOR_KEY, color);
 }
 
+/* ============================================================
+   DEPENDENCY & REMARKS EDITOR (Context Menu)
+   - Removed: Bar Color Picker
+   - Added: Remarks Textarea
+============================================================ */
 function openDependencyEditor(task, anchorEl, clientX, clientY) {
   document.querySelector(".dep-editor")?.remove();
 
   const editor = document.createElement("div");
   editor.className = "dep-editor";
-  editor.style.position = "fixed";
-  editor.style.zIndex = 3000;
+
+  // Inline styles for the editor popup
+  Object.assign(editor.style, {
+    position: "fixed",
+    zIndex: 3000,
+    background: "#1e293b", // Dark Slate
+    border: "1px solid #a4a7aa",
+    borderRadius: "8px",
+    padding: "12px",
+    boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.5)",
+    width: "240px",
+    color: "#f8fafc",
+    fontFamily: "inherit",
+  });
 
   editor.innerHTML = `
-    <h4>Dependency Offset</h4>
-    <label>
-      Lag <input type="number" min="0" value="${task.lagDays || 0}">
-    </label>
-    <label>
-      Lead <input type="number" min="0" value="${task.leadDays || 0}">
-    </label>
-    <label>
-      Type
-      <select class="dep-type">
+    <h4 style="margin:0 0 10px 0; font-size:13px; color:#cbd5e1; border-bottom:1px solid #334155; padding-bottom:6px;">
+      Edit Task Details
+    </h4>
+    
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:10px;">
+      <label style="font-size:11px; color:#94a3b8;">
+        Lag (Days) <input type="number" class="dep-lag" min="0" value="${
+          task.lagDays || 0
+        }" style="width:100%; background:#0f172a; border:1px solid #334155; color:white; padding:4px; border-radius:4px; margin-top:4px;">
+      </label>
+      <label style="font-size:11px; color:#94a3b8;">
+        Lead (Days) <input type="number" class="dep-lead" min="0" value="${
+          task.leadDays || 0
+        }" style="width:100%; background:#0f172a; border:1px solid #334155; color:white; padding:4px; border-radius:4px; margin-top:4px;">
+      </label>
+    </div>
+
+    <label style="font-size:11px; color:#94a3b8; display:block; margin-bottom:10px;">
+      Dependency Type
+      <select class="dep-type" style="width:100%; background:#0f172a; border:1px solid #334155; color:white; padding:4px; border-radius:4px; margin-top:4px;">
         <option value="FS">Finish → Start</option>
         <option value="SS">Start → Start</option>
       </select>
     </label>
-    <label>
-      Bar color <input type="color" class="bar-color" />
+    
+    <label style="font-size:11px; color:#94a3b8; display:block; margin-bottom:10px;">
+      Remarks / Notes
+      <textarea class="dep-remarks" rows="3" 
+        style="width:100%; background:#0f172a; border:1px solid #334155; color:white;  border-radius:4px; margin-top:4px; resize:vertical; font-size:12px;">${
+          task.remarks || ""
+        }</textarea>
     </label>
-    <div class="net">Net: 0 days</div>
-    <div class="actions">
-      <button class="cancel">Cancel</button>
-      <button class="apply">Apply</button>
+
+    <div class="net" style="font-size:11px; color:#60a5fa; margin-bottom:12px; font-weight:600;">Net Offset: 0 days</div>
+    
+    <div class="actions" style="display:flex; gap:8px; justify-content:flex-end;">
+      <button class="cancel" style="background:transparent; border:1px solid #475569; color:#cbd5e1; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px;">Cancel</button>
+      <button class="apply" style="background:#2563eb; border:none; color:white; padding:4px 12px; border-radius:4px; cursor:pointer; font-size:11px;">Apply</button>
     </div>
   `;
 
   document.body.appendChild(editor);
   positionContextMenu(editor, clientX, clientY);
 
-  const lagInput = editor.querySelectorAll("input")[0];
-  const leadInput = editor.querySelectorAll("input")[1];
+  // SELECTORS
+  const lagInput = editor.querySelector(".dep-lag");
+  const leadInput = editor.querySelector(".dep-lead");
   const typeSelect = editor.querySelector(".dep-type");
-  const colorInput = editor.querySelector(".bar-color");
+  const remarksInput = editor.querySelector(".dep-remarks"); // New
   const netEl = editor.querySelector(".net");
 
-  colorInput.value = getLastUsedColor();
   typeSelect.value = task.depType || "FS";
 
+  // UPDATE NET OFFSET DISPLAY
   const updateNet = () => {
     const lag = Number(lagInput.value) || 0;
     const lead = Number(leadInput.value) || 0;
     const net = lag - lead;
-    netEl.textContent = `Net: ${net >= 0 ? "+" : ""}${net} day(s)`;
+    netEl.textContent = `Net Offset: ${net >= 0 ? "+" : ""}${net} day(s)`;
   };
 
   updateNet();
   lagInput.oninput = updateNet;
   leadInput.oninput = updateNet;
 
+  // BUTTON HANDLERS
   editor.querySelector(".cancel").onclick = () => editor.remove();
+
   editor.querySelector(".apply").onclick = () => {
     pushHistory();
+
+    // Save Values
     task.lagDays = Math.max(0, Number(lagInput.value) || 0);
     task.leadDays = Math.max(0, Number(leadInput.value) || 0);
     task.depType = typeSelect.value;
-    task.color = colorInput.value;
-    setLastUsedColor(task.color);
+    task.remarks = remarksInput.value.trim(); // <--- SAVE REMARKS
 
+    // Trigger Update
     window.dispatchEvent(new CustomEvent("localchange"));
     applyDependencies();
     render();
@@ -133,6 +173,7 @@ function openDependencyEditor(task, anchorEl, clientX, clientY) {
     editor.remove();
   };
 
+  // CLOSE LOGIC (Click Outside / Escape)
   const close = (e) => {
     if (
       e.key === "Escape" ||
@@ -417,7 +458,7 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
       dateStyle: "medium",
     });
 
-    // --- LEFT ROW ---text-overflow: ellipsis; white-space: nowrap;
+    // --- LEFT ROW ---
     const leftRow = document.createElement("div");
     leftRow.className = "unified-row";
 
@@ -432,12 +473,28 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
            style="width: 500px; overflow: hidden; ">
            ${escapeHtml(task.title)}
       </div>
-
+      <div class="task-skill" 
+      title="${task.skill || "No Skills"}" 
+      style="
+        width: 60px; 
+        font-size: 10px; 
+        font-weight: 600; 
+        color: #475569; 
+        text-align: center; 
+        border: 1px solid #e2e8f0; 
+        border-radius: 4px; 
+        padding: 2px 0; 
+        background: #f8fafc; 
+        margin-right: 6px;
+        white-space: nowrap; 
+        overflow: hidden; 
+        text-overflow: ellipsis; 
+        cursor: pointer;
+      ">
+  ${task.skill || "-"}
+</div>
       <select class="task-status" data-id="${task.id}" 
-              style="   
-                      
-                      background:${getStatusBg(task.status)}; 
-                       ">
+              style="background:${getStatusBg(task.status)};">
         <option value="Open" ${
           task.status === "Open" ? "selected" : ""
         }>Open</option>
@@ -480,6 +537,8 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
     const delBtn = leftRow.querySelector(".task-delete");
     const insBtn = leftRow.querySelector(".task-insert");
     const statusSelect = leftRow.querySelector(".task-status");
+    // 1. SELECT THE SKILL CELL
+    const skillCell = leftRow.querySelector(".task-skill");
 
     statusSelect.addEventListener("change", (e) => {
       pushHistory();
@@ -487,7 +546,23 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
       task.status = newStatus;
       statusSelect.style.background = getStatusBg(newStatus);
       window.dispatchEvent(new CustomEvent("localchange"));
-      render(); // Re-render to update bar color immediately
+      render();
+    });
+
+    // 2. ADD 'skillCell' TO THIS LIST
+    // This stops the "Drag Row" logic from firing when you click these elements
+    [delBtn, insBtn, statusSelect, skillCell].forEach((el) => {
+      if (el) {
+        el.addEventListener("mousedown", (e) => e.stopPropagation());
+      }
+    });
+    statusSelect.addEventListener("change", (e) => {
+      pushHistory();
+      const newStatus = e.target.value;
+      task.status = newStatus;
+      statusSelect.style.background = getStatusBg(newStatus);
+      window.dispatchEvent(new CustomEvent("localchange"));
+      render();
     });
 
     [delBtn, insBtn, statusSelect].forEach((el) => {
@@ -504,75 +579,51 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
       deleteTask(task.id);
     });
 
-    // --- NEW: DATE EDITING LOGIC ---
+    // --- DATE EDITING LOGIC ---
     const startInput = leftRow.querySelector(".day-edit-start");
     const endInput = leftRow.querySelector(".day-edit-end");
-
-    // Helper: Parse "Day 5" -> 5
     const parseDay = (val) => {
       const num = parseInt(val.replace(/[^\d]/g, ""), 10);
       return isNaN(num) ? 0 : num;
     };
-
-    // 1. Handle Start Day Edit (Moves Task, Keeps Duration)
     const handleStartEdit = () => {
       const val = parseDay(startInput.value);
-      if (!val || val < 1) return render(); // Reset on invalid
-
-      pushHistory();
-      const oldStart = task.start;
-      const duration = daysBetween(task.start, task.end); // Keep duration
-
-      // Calculate New Start: ProjectStart + (Day - 1)
-      const newStart = addDays(projectStart, val - 1);
-
-      task.start = newStart;
-      task.end = addDays(newStart, duration); // Move end to match
-
-      window.dispatchEvent(new CustomEvent("localchange"));
-      applyDependencies(); // Recalculate dependencies in case of conflict
-      render();
-      import("./app.js").then((m) => m.refreshDependencyDropdown());
-    };
-
-    // 2. Handle End Day Edit (Changes Duration)
-    const handleEndEdit = () => {
-      const val = parseDay(endInput.value);
       if (!val || val < 1) return render();
-
       pushHistory();
-
-      // Calculate New End
-      const newEnd = addDays(projectStart, val - 1);
-
-      // Validation: End cannot be before Start
-      if (newEnd < task.start) {
-        alert("End day cannot be before Start day");
-        return render();
-      }
-
-      task.end = newEnd;
-
+      const duration = daysBetween(task.start, task.end);
+      const newStart = addDays(projectStart, val - 1);
+      task.start = newStart;
+      task.end = addDays(newStart, duration);
       window.dispatchEvent(new CustomEvent("localchange"));
       applyDependencies();
       render();
       import("./app.js").then((m) => m.refreshDependencyDropdown());
     };
-
-    // Input UX: Select all on focus, Save on Blur/Enter
+    const handleEndEdit = () => {
+      const val = parseDay(endInput.value);
+      if (!val || val < 1) return render();
+      pushHistory();
+      const newEnd = addDays(projectStart, val - 1);
+      if (newEnd < task.start) {
+        alert("End day cannot be before Start day");
+        return render();
+      }
+      task.end = newEnd;
+      window.dispatchEvent(new CustomEvent("localchange"));
+      applyDependencies();
+      render();
+      import("./app.js").then((m) => m.refreshDependencyDropdown());
+    };
     [startInput, endInput].forEach((input) => {
       input.onfocus = () => {
-        // Remove "Day " text for easier typing
         input.value = parseDay(input.value);
         input.select();
       };
-
       input.onkeydown = (e) => {
         if (e.key === "Enter") input.blur();
-        if (e.key === "Escape") render(); // Cancel
+        if (e.key === "Escape") render();
       };
     });
-
     startInput.onblur = handleStartEdit;
     endInput.onblur = handleEndEdit;
 
@@ -626,6 +677,9 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
 
     makeDraggable(bar);
 
+    /* ----------------------------------------------------------------------
+       UPDATED TOOLTIP LOGIC (Skill + Dependency + Remarks)
+    ---------------------------------------------------------------------- */
     bar.addEventListener("mousemove", () => {
       const t = tasks.find((x) => x.id === bar.dataset.id);
       if (!t) {
@@ -633,43 +687,74 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
         return;
       }
 
-      // --- DEPENDENCY INFO ---
+      // --- 1. PREPARE DEPENDENCY DATA ---
       const parent = tasks.find((x) => x.id === t.depends);
       const lag = Number.isFinite(t.lagDays) ? t.lagDays : 0;
       const lead = Number.isFinite(t.leadDays) ? t.leadDays : 0;
       const depType = t.depType || "FS";
+      const netOffset = lag - lead;
 
       let depHtml = "";
       if (t.depends && parent) {
-        // Dark mode divider: #334155
-        // Label color: #94a3b8
         depHtml = `
         <div style="margin-top:6px; padding-top:6px; border-top:1px solid #334155;">
-           <div><span style="color:#94a3b8">Type:</span> <strong>${depType}</strong></div>
-           <div><span style="color:#94a3b8">Lag:</span> <strong>${lag}d</strong> &nbsp; <span style="color:#94a3b8">Lead:</span> <strong>${lead}d</strong></div>
+           <div style="margin-bottom:2px;">
+             <span style="color:#94a3b8">Depends On:</span> 
+             <span style="color:#f59e0b; font-weight:600;">${escapeHtml(
+               parent.title
+             )}</span>
+           </div>
+           <div>
+             <span style="color:#94a3b8">Type:</span> <strong>${depType}</strong> 
+             &nbsp;|&nbsp; 
+             <span style="color:#94a3b8">Offset:</span> <strong>${
+               netOffset > 0 ? "+" : ""
+             }${netOffset}d</strong>
+           </div>
         </div>`;
       }
 
-      // Dark Mode Colors:
-      // Title: #ffffff
-      // Main Text: #cbd5e1 (Light Grey)
-      // Labels: #94a3b8 (Dim Grey)
+      // --- 2. PREPARE REMARKS HTML (NEW) ---
+      // Only show if remarks actually exist
+      const remarksHtml = t.remarks
+        ? `<div style="margin-top:6px; padding-top:4px; border-top:1px dashed #334155; color:#e2e8f0; font-style:italic; font-size:11px;">
+             📝 ${escapeHtml(t.remarks)}
+           </div>`
+        : "";
+
+      // --- 3. BUILD TOOLTIP HTML ---
       tooltip.innerHTML = `
-        <div style="font-weight:600; margin-bottom:4px; font-size:13px; color:#ffffff;">${escapeHtml(
-          t.title
-        )}</div>
-        <div style="font-size:12px; color:#cbd5e1; line-height:1.4">
-          <div><span style="color:#94a3b8">Status:</span> <strong>${
-            t.status
-          }</strong></div>
-          <div><span style="color:#94a3b8">Dates:</span> <strong>Day ${
-            daysBetween(projectStart, t.start) + 1
-          } - Day ${daysBetween(projectStart, t.end) + 1}</strong></div>
+        <div style="font-weight:600; margin-bottom:6px; font-size:13px; color:#ffffff; border-bottom: 1px solid #334155; padding-bottom: 4px;">
+          ${escapeHtml(t.title)}
+        </div>
+
+        <div style="font-size:12px; color:#cbd5e1; line-height:1.5">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+             <span><span style="color:#94a3b8">Status:</span> <strong>${
+               t.status
+             }</strong></span>
+             <span><span style="color:#94a3b8">Skill:</span> <strong style="color: #60a5fa;">${
+               t.skill || "-"
+             }</strong></span>
+          </div>
+
+          <div>
+            <span style="color:#94a3b8">Timeline:</span> 
+            <strong>Day ${daysBetween(projectStart, t.start) + 1} - Day ${
+        daysBetween(projectStart, t.end) + 1
+      }</strong>
+            <span style="color:#64748b; font-size: 11px;"> (${
+              daysBetween(t.start, t.end) + 1
+            }d)</span>
+          </div>
+
           ${depHtml}
-        </div>`;
+          
+          ${remarksHtml} </div>`;
 
       tooltip.style.opacity = "1";
     });
+
     bar.addEventListener("mouseleave", () => {
       tooltip.style.opacity = "0";
     });
@@ -694,6 +779,7 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
 
   attachDurationEditing();
   attachTitleEditing();
+  attachSkillEditing();
 }
 
 // ... syncRowHeights, repositionBarLabels, helpers ...
