@@ -183,23 +183,52 @@ export function toDateInput(d) {
    Replaces the old "Parent -> Child" logic.
 ============================================================ */
 export function organizeTasksByWaterfall(taskList) {
-  // 1. Sort strictly by Start Date
-  const sortedList = [...taskList].sort((a, b) => {
-    const startA = new Date(a.start).getTime();
-    const startB = new Date(b.start).getTime();
+  // 1. Create Maps for fast lookup
+  const taskMap = new Map();
+  const childrenMap = new Map();
+  const roots = [];
 
-    // Primary: Earliest date first
-    if (startA !== startB) {
-      return startA - startB;
-    }
-
-    // Secondary: If start dates are equal, shortest duration first
-    const endA = new Date(a.end).getTime();
-    const endB = new Date(b.end).getTime();
-    return endA - endB;
+  taskList.forEach((t) => {
+    taskMap.set(t.id, t);
+    childrenMap.set(t.id, []);
   });
 
-  // 2. Re-assign Row Numbers based on new chronological order
+  // 2. Identify Roots (No parent, or parent not in this list) vs Children
+  taskList.forEach((t) => {
+    // Note: t.depends is the ID of the predecessor (FS link)
+    if (t.depends && taskMap.has(t.depends)) {
+      childrenMap.get(t.depends).push(t);
+    } else {
+      roots.push(t);
+    }
+  });
+
+  // 3. Sort Roots by Start Date (The main timeline backbone)
+  roots.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  // 4. Recursive Traversal (DFS) to build final order
+  const sortedList = [];
+  const visitedIds = new Set();
+
+  function traverse(task) {
+    if (visitedIds.has(task.id)) return;
+    visitedIds.add(task.id);
+    sortedList.push(task);
+
+    // Find children (dependents)
+    const kids = childrenMap.get(task.id) || [];
+
+    // Sort children by Date so siblings appear chronologically
+    kids.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+    // Visit children immediately to keep them under parent (Visual Grouping)
+    kids.forEach((kid) => traverse(kid));
+  }
+
+  // Execute Traversal
+  roots.forEach((root) => traverse(root));
+
+  // 5. Re-assign Row Numbers (Optional, keeps data clean)
   sortedList.forEach((t, index) => {
     t.row = index;
   });
@@ -471,4 +500,120 @@ export function refreshModalDropdowns() {
     // Restore selection if possible
     select.value = currentSelection;
   });
+}
+/* ============================================================
+   UI HELPER: Attach Skill Picker (Fixed Position + Enter Key)
+   Used in: Create Project Modal
+============================================================ */
+export function attachSkillPicker(input) {
+  if (!input) return;
+
+  const SKILLS = ["AVI", "CRG", "CAB", "ENG", "FLC", "LDG", "STR", "SHOP"];
+
+  input.style.cursor = "pointer";
+  input.setAttribute("readonly", true);
+  input.setAttribute("placeholder", "Select...");
+
+  input.onclick = (e) => {
+    e.stopPropagation();
+
+    // 1. Close any other open popups first
+    document.querySelectorAll(".skill-picker-popup").forEach((p) => p.remove());
+
+    const currentVals = (input.value || "").split(",").filter(Boolean);
+    const rect = input.getBoundingClientRect();
+
+    // 2. Create Popup
+    const popup = document.createElement("div");
+    popup.className = "skill-picker-popup";
+
+    Object.assign(popup.style, {
+      position: "fixed",
+      top: `${rect.bottom + 5}px`,
+      left: `${rect.left}px`,
+      zIndex: "10000",
+      background: "#1e293b",
+      border: "1px solid #334155",
+      borderRadius: "6px",
+      padding: "8px",
+      boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.5)",
+      minWidth: "150px",
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: "6px",
+    });
+
+    // Prevent clicks inside from closing it
+    popup.addEventListener("click", (e) => e.stopPropagation());
+    popup.addEventListener("mousedown", (e) => e.stopPropagation());
+
+    // 3. Create Checkboxes
+    SKILLS.forEach((skill) => {
+      const label = document.createElement("label");
+      Object.assign(label.style, {
+        display: "flex",
+        alignItems: "center",
+        fontSize: "11px",
+        color: "#f8fafc",
+        cursor: "pointer",
+        userSelect: "none",
+      });
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = skill;
+      cb.checked = currentVals.includes(skill);
+      cb.style.marginRight = "6px";
+      cb.style.cursor = "pointer";
+
+      // Update input immediately (Live Update)
+      cb.onchange = () => {
+        const checked = Array.from(popup.querySelectorAll("input:checked")).map(
+          (c) => c.value
+        );
+        input.value = checked.join(",");
+      };
+
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(skill));
+      popup.appendChild(label);
+    });
+
+    document.body.appendChild(popup);
+
+    // --- CLOSING LOGIC (Shared) ---
+    const closePopup = () => {
+      popup.remove();
+      document.removeEventListener("click", onOutsideClick);
+      document.removeEventListener("keydown", onKeyPress);
+      window.removeEventListener("resize", closePopup);
+      document.removeEventListener("scroll", closePopup, true);
+    };
+
+    // Handler 1: Click Outside
+    const onOutsideClick = (ev) => {
+      if (!popup.contains(ev.target) && ev.target !== input) {
+        closePopup();
+      }
+    };
+
+    // Handler 2: Key Press (Enter/Escape)
+    const onKeyPress = (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault(); // Prevent submitting the modal form if inside one
+        closePopup();
+      }
+      if (ev.key === "Escape") {
+        closePopup();
+      }
+    };
+
+    // Attach Listeners
+    setTimeout(() => {
+      document.addEventListener("click", onOutsideClick);
+      document.addEventListener("keydown", onKeyPress); // <--- NEW LISTENER
+      window.addEventListener("resize", closePopup);
+      document.addEventListener("scroll", closePopup, true);
+    }, 0);
+  };
 }
