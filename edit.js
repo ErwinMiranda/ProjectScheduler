@@ -182,3 +182,132 @@ export function attachDateEditing() {
     });
   });
 }
+
+/* ============================================================
+   SKILL EDITING (Dark Mode Pop-up + Enter Key Support)
+==============================================================*/
+export function attachSkillEditing() {
+  const SKILLS_LIST = ["AVI", "CRG", "CAB", "ENG", "FLC", "LDG", "STR", "SHOP"];
+
+  document.querySelectorAll(".task-skill").forEach((cell) => {
+    cell.onclick = (e) => {
+      e.stopPropagation();
+
+      // 1. Force close others
+      document.querySelectorAll(".skill-popup").forEach((p) => p.remove());
+
+      const rowLeft = cell.closest(".row-left");
+      const id = rowLeft.querySelector(".task-dur").dataset.id;
+      const task = tasks.find((t) => t.id === id);
+
+      if (!task) return;
+
+      const currentSkills = (task.skill || "").split(",").filter(Boolean);
+
+      // Reset z-index
+      document
+        .querySelectorAll(".task-skill")
+        .forEach((c) => (c.style.zIndex = "auto"));
+
+      cell.style.overflow = "visible";
+      cell.style.position = "relative";
+      cell.style.zIndex = "10000";
+
+      // 2. Create Popup
+      const popup = document.createElement("div");
+      popup.className = "skill-popup";
+
+      // Stop clicks inside from bubbling
+      popup.addEventListener("click", (e) => e.stopPropagation());
+      popup.addEventListener("mousedown", (e) => e.stopPropagation());
+
+      Object.assign(popup.style, {
+        position: "absolute",
+        top: "100%",
+        left: "0",
+        zIndex: "10001",
+        background: "#1e293b",
+        border: "1px solid #334155",
+        borderRadius: "6px",
+        padding: "8px",
+        boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.5)",
+        minWidth: "160px",
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: "6px",
+        marginTop: "4px",
+      });
+
+      // 3. Create Checkboxes
+      SKILLS_LIST.forEach((skillCode) => {
+        const label = document.createElement("label");
+        Object.assign(label.style, {
+          display: "flex",
+          alignItems: "center",
+          fontSize: "11px",
+          color: "#f8fafc",
+          cursor: "pointer",
+          fontWeight: "500",
+          userSelect: "none",
+        });
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = skillCode;
+        checkbox.style.marginRight = "6px";
+        checkbox.style.cursor = "pointer";
+
+        if (currentSkills.includes(skillCode)) {
+          checkbox.checked = true;
+        }
+
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(skillCode));
+        popup.appendChild(label);
+      });
+
+      cell.appendChild(popup);
+
+      // --- SHARED SAVE LOGIC ---
+      const commitAndClose = () => {
+        const selected = [];
+        popup.querySelectorAll("input:checked").forEach((chk) => {
+          selected.push(chk.value);
+        });
+
+        pushHistory();
+        task.skill = selected.join(",");
+
+        window.dispatchEvent(new CustomEvent("localchange"));
+        render(); // Re-render (closes popup)
+
+        // Clean up listeners
+        document.removeEventListener("mousedown", onOutsideClick);
+        document.removeEventListener("keydown", onKeyPress);
+      };
+
+      // Handler 1: Click Outside
+      const onOutsideClick = (ev) => {
+        if (popup.contains(ev.target)) return;
+        commitAndClose();
+      };
+
+      // Handler 2: Enter Key (Save) or Escape (Cancel)
+      const onKeyPress = (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault(); // Prevent default browser action
+          commitAndClose();
+        }
+        if (ev.key === "Escape") {
+          render(); // Just re-render to close without saving
+        }
+      };
+
+      // Attach Listeners (Delayed to avoid immediate trigger)
+      setTimeout(() => {
+        document.addEventListener("mousedown", onOutsideClick);
+        document.addEventListener("keydown", onKeyPress);
+      }, 0);
+    };
+  });
+}
