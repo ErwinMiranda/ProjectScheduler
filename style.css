@@ -622,8 +622,7 @@ input[type="date"] {
 }
 .task-header-new {
   display: grid;
-  grid-template-columns: 1.6fr 1fr 1fr 32px;
-  gap: 12px;
+  gap: 10px;
   font-size: 12px;
   font-weight: 600;
   color: #e3eaf4;
@@ -849,4 +848,18 @@ input[type="date"] {
 #projectModal .task-scroll::-webkit-scrollbar-thumb {
   background: #334155;
   border-radius: 4px;
+}
+/* FORCE DROPDOWN TRUNCATION */
+#projectModal .t-dep {
+  width: 100%; /* Fill the grid cell */
+  max-width: 100%; /* Never exceed grid cell */
+  text-overflow: ellipsis; /* Add "..." */
+  white-space: nowrap; /* No wrapping */
+  overflow: hidden; /* Hide extra text */
+  display: block; /* Required for ellipsis to work on some browsers */
+}
+#newProjectStart::-webkit-calendar-picker-indicator {
+  filter: invert(1); /* Turns black icon to white */
+  cursor: pointer; /* Shows a hand cursor on hover */
+  opacity: 0.8; /* Slight transparency (optional) */
 }
