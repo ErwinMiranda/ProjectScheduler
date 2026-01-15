@@ -63,6 +63,8 @@ export async function saveTask(task) {
     start: task.start.toISOString(),
     end: task.end.toISOString(),
     status: task.status || "Open", // ✅ Added
+    skill: data.skill || "",
+    remarks: data.remarks || "",
     depends: task.depends || "",
     depType: task.depType || "FS",
     row: task.row || 0,
@@ -91,6 +93,8 @@ export function listenTasksByWO(wo, callback) {
         start: new Date(data.start),
         end: new Date(data.end),
         status: data.status || "Open", // ✅ Added
+        skill: data.skill || "",
+        remarks: data.remarks || "",
         depends: data.depends || "",
         row: data.row || 0,
         lagDays: Number.isFinite(data.lagDays) ? data.lagDays : 0,
@@ -124,7 +128,9 @@ export async function fetchTasksByWOOnce(wo) {
       duration:
         data.duration ||
         Math.round((new Date(data.end) - new Date(data.start)) / 86400000) + 1,
-      status: data.status || "Open", // ✅ Added (Crucial for Loading)
+      status: data.status || "Open",
+      skill: data.skill || "",
+      remarks: data.remarks || "",
       depends: data.depends || "",
       depType: data.depType || "FS",
       row: data.row || 0,
@@ -169,7 +175,9 @@ export async function batchSaveTasks(taskArray) {
           ? t.end.toISOString()
           : new Date(t.end).toISOString(),
       duration,
-      status: t.status || "Open", // ✅ Added (Crucial for Saving)
+      status: t.status || "Open",
+      skill: t.skill || "",
+      remarks: t.remarks || "",
       depends: t.depends || "",
       depType: t.depType || "FS",
       lagDays: Number(t.lagDays) || 0,
