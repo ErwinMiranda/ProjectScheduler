@@ -22,6 +22,7 @@ import {
   organizeTasksByWaterfall,
   ensurePrintButton,
   refreshModalDropdowns,
+  attachSkillPicker,
 } from "./utils.js";
 import {
   updateTaskList,
@@ -623,51 +624,61 @@ document.getElementById("cancelProjectBtn").onclick = () => {
   window.location.reload();
 };
 
-/* Utility to add a task row */
+/* In app.js */
 function addTaskRow() {
   const container = document.getElementById("taskRows");
   const row = document.createElement("div");
   row.className = "task-row";
-  row.style.gridTemplateColumns = "2fr 0.6fr 0.6fr 0.6fr 32px";
+
+  // ✅ FIXED: Specific widths to prevent expansion
+  row.style.gridTemplateColumns = "1fr 60px 50px 100px 80px 30px";
 
   row.innerHTML = `
     <input type="text" placeholder="Task name" class="t-title">
     <input type="number" min="1" value="1" class="t-start-day" placeholder="Day">
     <input type="number" min="1" value="1" class="t-dur" placeholder="Dur">
+    
     <select class="t-dep"></select>
+    
+    <div style="position: relative;">
+        <input type="text" class="t-skill" placeholder="Skill" style="width: 100%;">
+    </div>
+           
     <button class="delete-row">✕</button>
   `;
 
-  // 1. Live Update: When title changes, update other dropdowns
+  // ... (Keep existing listeners) ...
   const titleInput = row.querySelector(".t-title");
   titleInput.addEventListener("input", refreshModalDropdowns);
+  const skillInput = row.querySelector(".t-skill");
+  attachSkillPicker(skillInput);
 
-  // 2. Delete Logic
   row.querySelector(".delete-row").onclick = () => {
     row.remove();
-    refreshModalDropdowns(); // Re-index list after delete
+    refreshModalDropdowns();
   };
 
   container.appendChild(row);
-
-  // 3. Refresh immediately to populate the new dropdown
   refreshModalDropdowns();
 }
 
 document.getElementById("addTaskRowBtn").onclick = addTaskRow;
 
 /* ============================================================
-   TEMPLATE SELECTED -> LOAD ROWS INSTANTLY (No Popup)
+   TEMPLATE LOADER (Fixed: Grid Layout + Skill Picker)
 ============================================================ */
+
 document.getElementById("loadTemplateSelect").onchange = async () => {
   const select = document.getElementById("loadTemplateSelect");
   const id = select.value;
   const container = document.getElementById("taskRows");
 
-  container.innerHTML = "";
+  container.innerHTML = ""; // Clear existing rows
 
   if (!id) {
-    addTaskRow();
+    // If "None" selected, add one blank row
+    // Ensure addTaskRow is available (it is defined in app.js scope)
+    if (typeof addTaskRow === "function") addTaskRow();
     return;
   }
 
@@ -683,52 +694,68 @@ document.getElementById("loadTemplateSelect").onchange = async () => {
       return;
     }
 
-    // A. Create All DOM Elements First
+    // A. Create All DOM Elements
     tpl.tasks.forEach((task) => {
       const row = document.createElement("div");
       row.className = "task-row";
-      row.style.gridTemplateColumns = "2fr 0.6fr 0.6fr 0.6fr 32px";
+
+      // 1. MATCH THE HEADER GRID (Fixed Widths)
+      row.style.gridTemplateColumns = "1fr 60px 50px 100px 80px 30px";
 
       const startDay =
         (typeof task.startOffset === "number" ? task.startOffset : 0) + 1;
       const duration = task.duration || 1;
+      const skill = task.skill || "";
 
+      // 2. HTML STRUCTURE
       row.innerHTML = `
         <input type="text" class="t-title" value="${task.title}">
         <input type="number" class="t-start-day" min="1" value="${startDay}">
         <input type="number" class="t-dur" min="1" value="${duration}">
+        
         <select class="t-dep"></select>
+        
+        <div style="position: relative;">
+            <input type="text" class="t-skill" value="${skill}" placeholder="Select..." style="width: 100%;">
+        </div>
+        
         <button class="delete-row">✕</button>
       `;
 
-      // Store dependency target INDEX temporarily in dataset
-      // We can't set select.value yet because the options don't exist
+      // 3. STORE HIDDEN METADATA
+      // We store the target dependency INDEX (0, 1, 2) temporarily
       if (task.dependsIndex !== undefined && task.dependsIndex >= 0) {
         row.dataset.targetIndex = task.dependsIndex;
       }
 
-      // Live Listeners
-      row
-        .querySelector(".t-title")
-        .addEventListener("input", refreshModalDropdowns);
-      row.querySelector(".delete-row").onclick = () => {
-        row.remove();
-        refreshModalDropdowns();
-      };
-
-      // Keep hidden data
       row.dataset.depType = task.depType || "FS";
       row.dataset.lag = task.lagDays || 0;
       row.dataset.lead = task.leadDays || 0;
       row.dataset.color = task.color || "";
 
+      // 4. ATTACH LISTENERS
+      // A. Live update for dependency dropdowns when title changes
+      row
+        .querySelector(".t-title")
+        .addEventListener("input", refreshModalDropdowns);
+
+      // B. Delete row logic
+      row.querySelector(".delete-row").onclick = () => {
+        row.remove();
+        refreshModalDropdowns();
+      };
+
+      // C. IMPORTANT: Attach the Skill Picker to this specific row
+      const skillInput = row.querySelector(".t-skill");
+      attachSkillPicker(skillInput);
+
       container.appendChild(row);
     });
 
-    // B. Refresh All Dropdowns (Now that all titles exist)
+    // B. Refresh All Dropdowns (Populate <options> based on titles)
     refreshModalDropdowns();
 
-    // C. Set Selected Values
+    // C. Set Selected Dependencies (Now that options exist)
     const rows = document.querySelectorAll("#taskRows .task-row");
     rows.forEach((row) => {
       if (row.dataset.targetIndex) {
@@ -845,7 +872,7 @@ document.getElementById("createProjectBtn").onclick = async () => {
       const start = addDays(anchorDate, startDay - 1);
       const end = addDays(start, duration - 1);
       const tempId = "local-" + Date.now() + "-" + index;
-
+      const skill = row.querySelector(".t-skill").value.trim();
       tasksLocal.push({
         id: tempId,
         tempId: tempId,
@@ -856,7 +883,7 @@ document.getElementById("createProjectBtn").onclick = async () => {
         end,
         duration,
         status: "Open",
-
+        skill: skill,
         dependsIndex: depIndex,
         depType: row.dataset.depType || "FS",
         lagDays: parseInt(row.dataset.lag || 0),
@@ -1211,3 +1238,30 @@ ensurePrintButton(); // <--- Add this line
 
 await loadWOList();
 // ...
+/* ============================================================
+   SORTING LOGIC
+============================================================ */
+
+// 1. Sort by Date (Simple Chronological)
+document.getElementById("btnSortDate").onclick = () => {
+  tasks.sort((a, b) => {
+    if (a.start.getTime() !== b.start.getTime()) {
+      return a.start - b.start;
+    }
+    return a.id.localeCompare(b.id);
+  });
+  pushHistory();
+  render();
+};
+
+// 2. SORT: WATERFALL (Replaces "Group by Skill")
+document.getElementById("btnSortSkill").onclick = () => {
+  const sorted = organizeTasksByWaterfall(tasks);
+
+  // Update the main tasks array in-place
+  // (We can't reassign the 'tasks' variable, so we empty and refill it)
+  tasks.splice(0, tasks.length, ...sorted);
+
+  pushHistory();
+  render();
+};
