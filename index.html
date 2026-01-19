@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -54,7 +54,7 @@
           Sort: Start Date
         </button>
         <button
-          id="btnSortSkill"
+          id="btnSortWaterfall"
           style="
             padding: 6px 12px;
             background: #334155;
@@ -65,6 +65,60 @@
           "
         >
           Sort: WaterFall
+        </button>
+        <button
+          id="btnFilterSkill"
+          style="
+            padding: 6px 12px;
+            background: #334155;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          "
+        >
+          <span>Filter Skills</span>
+          <span
+            id="filterCount"
+            style="
+              background: #0f172a;
+              font-size: 10px;
+              padding: 2px 5px;
+              border-radius: 4px;
+              display: none;
+            "
+            >0</span
+          >
+        </button>
+        <button
+          id="btnFilterDay"
+          style="
+            padding: 6px 12px;
+            background: #334155;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          "
+        >
+          <span>Filter Day</span>
+          <span
+            id="filterDayBadge"
+            style="
+              background: #0f172a;
+              font-size: 10px;
+              padding: 2px 5px;
+              border-radius: 4px;
+              display: none;
+            "
+            >D</span
+          >
         </button>
       </div>
       <!-- GANTT unified panel -->
@@ -106,19 +160,6 @@
               <div id="depOverlay" class="dep-overlay"></div>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- ADD TASK -->
-      <div class="panel add-task-panel">
-        <div class="add-task">
-          <input id="newTitle" type="text" placeholder="Task name" />
-          <input id="newStart" type="date" />
-          <input id="newEnd" type="date" />
-          <select id="newDepends">
-            <option value="">No dependency</option>
-          </select>
-          <button id="addTaskBtn" class="btn">Add</button>
         </div>
       </div>
     </div>
