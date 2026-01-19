@@ -31,6 +31,15 @@ export function clearSelection() {
 }
 
 /* ============================================================
+   FILTER STATE (NEW - For Option A)
+============================================================ */
+export const filterState = {
+  skills: [], // Empty means "Show All"
+  dayFrom: null,
+  dayTo: null,
+};
+
+/* ============================================================
    UNDO HISTORY (LOCAL ONLY)
 ============================================================ */
 let history = [];
@@ -109,7 +118,7 @@ export function setBaselineTasks(list) {
       sourceLength: list.length,
       firstId: list[0]?.id,
     },
-    new Error().stack
+    new Error().stack,
   );
 
   baselineTasks = list.map((t) => ({
@@ -125,6 +134,7 @@ export function commitBaselineFromFirestore(list) {
     end: new Date(t.end),
   }));
 }
+
 /* ============================================================
    CRITICAL PATH STATE
 ============================================================ */
