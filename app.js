@@ -19,10 +19,10 @@ import {
   daysBetween,
   showLoading,
   hideLoading,
-  organizeTasksByWaterfall,
   ensurePrintButton,
   refreshModalDropdowns,
   attachSkillPicker,
+  sortTasksByDate,
 } from "./utils.js";
 import {
   updateTaskList,
@@ -286,16 +286,6 @@ export function shiftChildren(parentId, deltaDays, opts = {}) {
 }
 
 /* ============================================================
-   DROPDOWN REFRESH
-============================================================ */
-export function refreshDependencyDropdown() {
-  newDepends.innerHTML = `<option value="">No dependency</option>`;
-  tasks.forEach((t) => {
-    newDepends.innerHTML += `<option value="${t.id}">${t.title}</option>`;
-  });
-}
-
-/* ============================================================
    RENDER WRAPPER
 ============================================================ */
 function computeMinDate() {
@@ -308,6 +298,7 @@ function computeMinDate() {
 }
 
 export function refresh() {
+  sortTasksByDate();
   render(taskLeftList, rowsRight, timelineHeader, depOverlay, computeMinDate());
 
   updateTAT();
@@ -329,7 +320,7 @@ woFilter.onchange = async (e) => {
 
   applyDependencies();
   refresh();
-  refreshDependencyDropdown();
+
   setUnsaved(false);
 };
 
@@ -341,7 +332,7 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     if (undoHistory()) {
       refresh();
-      refreshDependencyDropdown();
+
       setUnsaved(true);
     }
   }
@@ -356,52 +347,6 @@ document.addEventListener("keydown", (e) => {
     render();
   }
 });
-
-/* ============================================================
-   ADD TASK (LOCAL)
-============================================================ */
-document.getElementById("addTaskBtn").onclick = () => {
-  const wo = woFilter.value;
-  if (!wo) return alert("Select WO first");
-
-  const acreg = woFilter.selectedOptions[0].dataset.acreg;
-  const title = document.getElementById("newTitle").value.trim();
-  const s = document.getElementById("newStart").value;
-  const e = document.getElementById("newEnd").value;
-  const dep = newDepends.value || "";
-  if (!title || !s || !e) return;
-
-  const start = new Date(s);
-  const end = new Date(e);
-  const duration = daysBetween(start, end) + 1;
-
-  const t = {
-    id: "local-" + Date.now(),
-    wo,
-    acreg,
-    title,
-    start,
-    end,
-    duration,
-    status: "Open", // <--- ADD THIS LINE
-    depends: dep,
-    depType: "FS",
-    lagDays: 0,
-    leadDays: 0,
-    row: tasks.length,
-    taskno: Date.now(),
-  };
-
-  pushHistory();
-  tasks.push(t);
-
-  setUnsaved(true);
-  applyDependencies();
-  refresh();
-  refreshDependencyDropdown();
-
-  document.getElementById("newTitle").value = "";
-};
 
 /* ============================================================
    MULTI-DEPENDENCY
@@ -469,7 +414,7 @@ async function saveChanges() {
 
     applyDependencies();
     refresh();
-    refreshDependencyDropdown();
+
     setUnsaved(false);
     hideLoading();
 
@@ -493,19 +438,13 @@ async function discardChanges() {
 
   applyDependencies();
   refresh();
-  refreshDependencyDropdown();
+
   setUnsaved(false);
 }
 
 /* ============================================================
    INITIAL SETUP
 ============================================================ */
-document.getElementById("newStart").value = new Date()
-  .toISOString()
-  .slice(0, 10);
-document.getElementById("newEnd").value = addDays(new Date(), 2)
-  .toISOString()
-  .slice(0, 10);
 
 ensureSaveControls();
 await loadWOList();
@@ -932,7 +871,7 @@ document.getElementById("createProjectBtn").onclick = async () => {
 
         // Find original object to update its finalId too
         const original = tasksLocal.find(
-          (t) => t.tempId === toSave[idx].tempId
+          (t) => t.tempId === toSave[idx].tempId,
         );
         if (original) original.finalId = newId;
       }
@@ -1038,7 +977,7 @@ async function loadWOData(wo) {
 
   applyDependencies();
   refresh();
-  refreshDependencyDropdown();
+
   setUnsaved(false);
 
   return list;
@@ -1052,7 +991,7 @@ async function loadFromFirestoreAndCommitBaseline(wo) {
 
   applyDependencies();
   refresh();
-  refreshDependencyDropdown();
+
   setUnsaved(false);
 }
 
@@ -1090,7 +1029,7 @@ woFilter.addEventListener("change", async (e) => {
     updateTaskList(list);
     applyDependencies();
     refresh();
-    refreshDependencyDropdown();
+
     setUnsaved(false);
   } catch (err) {
     console.error(err);
@@ -1110,7 +1049,7 @@ document.addEventListener("keydown", async (e) => {
     if (!undoHistory()) return;
 
     refresh();
-    refreshDependencyDropdown();
+
     setUnsaved(true);
   }
 });
@@ -1124,17 +1063,6 @@ document.addEventListener("keydown", (e) => {
     render();
   }
 });
-
-/* ============================================================
-   Setup initial start/end for Add-Task panel
-============================================================ */
-document.getElementById("newStart").value = new Date()
-  .toISOString()
-  .slice(0, 10);
-
-document.getElementById("newEnd").value = addDays(new Date(), 2)
-  .toISOString()
-  .slice(0, 10);
 
 /* ============================================================
    INITIAL STARTUP
@@ -1177,7 +1105,7 @@ export async function deleteTask(taskId) {
 
   applyDependencies();
   refresh();
-  refreshDependencyDropdown();
+
   setUnsaved(false);
 }
 
@@ -1242,26 +1170,367 @@ await loadWOList();
    SORTING LOGIC
 ============================================================ */
 
-// 1. Sort by Date (Simple Chronological)
-document.getElementById("btnSortDate").onclick = () => {
-  tasks.sort((a, b) => {
+// 1. SORT BY DATE (Strict Date + Dependency Priority)
+const btnDate = document.getElementById("btnSortDate");
+if (btnDate) {
+  btnDate.onclick = () => {
+    pushHistory();
+    sortTasksByDate();
+    render();
+  };
+}
+
+// 2. SORT WATERFALL (Strict Hierarchy / Parent First)
+const btnWaterfall = document.getElementById("btnSortWaterfall");
+if (btnWaterfall) {
+  btnWaterfall.onclick = () => {
+    // Use the recursive helper to ensure Parent is always on top
+    const sorted = organizeTasksByWaterfall(tasks);
+
+    // Update main array
+    tasks.splice(0, tasks.length, ...sorted);
+
+    pushHistory();
+    render();
+  };
+}
+
+/* ============================================================
+   HELPER: Waterfall Sort 
+   (Parent > Child. Siblings: Start Date > Shortest Duration)
+============================================================ */
+export function organizeTasksByWaterfall(taskList) {
+  const taskMap = new Map();
+  const childrenMap = new Map();
+  const roots = [];
+
+  // 1. Map Data
+  taskList.forEach((t) => {
+    taskMap.set(t.id, t);
+    childrenMap.set(t.id, []);
+  });
+
+  // 2. Build Children Map & Roots
+  taskList.forEach((t) => {
+    if (t.depends && taskMap.has(t.depends)) {
+      childrenMap.get(t.depends).push(t);
+    } else {
+      roots.push(t);
+    }
+  });
+
+  /* ============================================================
+     Detect tasks that belong to a dependency chain
+     (parents + children + middle nodes)
+  ============================================================ */
+  const inDependencyChain = new Set();
+
+  function markChain(task) {
+    if (inDependencyChain.has(task.id)) return;
+    inDependencyChain.add(task.id);
+    (childrenMap.get(task.id) || []).forEach(markChain);
+  }
+
+  taskList.forEach((t) => {
+    if (t.depends || childrenMap.get(t.id)?.length > 0) {
+      markChain(t);
+    }
+  });
+
+  /* ============================================================
+     SORTING FUNCTION (UPDATED RULE)
+  ============================================================ */
+  const smartSort = (a, b) => {
+    // 1. Start Date
     if (a.start.getTime() !== b.start.getTime()) {
       return a.start - b.start;
     }
-    return a.id.localeCompare(b.id);
-  });
-  pushHistory();
-  render();
-};
 
-// 2. SORT: WATERFALL (Replaces "Group by Skill")
-document.getElementById("btnSortSkill").onclick = () => {
-  const sorted = organizeTasksByWaterfall(tasks);
+    const aInChain = inDependencyChain.has(a.id);
+    const bInChain = inDependencyChain.has(b.id);
 
-  // Update the main tasks array in-place
-  // (We can't reassign the 'tasks' variable, so we empty and refill it)
-  tasks.splice(0, tasks.length, ...sorted);
+    // 2. Dependency Chain Priority
+    if (aInChain && !bInChain) return -1;
+    if (!aInChain && bInChain) return 1;
 
-  pushHistory();
-  render();
-};
+    const durA = a.end.getTime() - a.start.getTime();
+    const durB = b.end.getTime() - b.start.getTime();
+
+    // 3. SAME RULE AS btnSortDate:
+    //    SHORTER duration FIRST (for BOTH chain & floating)
+    if (durA !== durB) {
+      return durA - durB;
+    }
+
+    // 4. Stable fallback (NOT alphabetical if possible)
+    return (a.row ?? 0) - (b.row ?? 0);
+  };
+
+  // 3. Sort Roots
+  roots.sort(smartSort);
+
+  const sortedList = [];
+  const visitedIds = new Set();
+
+  // 4. Recursive Traversal (structure preserved)
+  function traverse(task) {
+    if (visitedIds.has(task.id)) return;
+    visitedIds.add(task.id);
+    sortedList.push(task);
+
+    const kids = childrenMap.get(task.id) || [];
+    kids.sort(smartSort);
+    kids.forEach(traverse);
+  }
+
+  roots.forEach(traverse);
+
+  return sortedList;
+}
+
+/* In app.js */
+import { filterState } from "./state.js"; // Import the state
+
+/* ============================================================
+   FILTER LOGIC
+============================================================ */
+const skillSelect = document.getElementById("filterSkill");
+if (skillSelect) {
+  skillSelect.onchange = (e) => {
+    // 1. Update State
+    filterState.skill = e.target.value;
+
+    // 2. Re-render (The renderer will now see the new filter)
+    render();
+  };
+}
+/* ============================================================
+   MULTI-SELECT FILTER POPUP
+============================================================ */
+
+const btnFilter = document.getElementById("btnFilterSkill");
+const countBadge = document.getElementById("filterCount");
+
+if (btnFilter) {
+  btnFilter.onclick = (e) => {
+    e.stopPropagation();
+
+    // 1. Close any existing popups
+    document.querySelectorAll(".skill-filter-popup").forEach((p) => p.remove());
+
+    // 2. Create Popup
+    const popup = document.createElement("div");
+    popup.className = "skill-filter-popup";
+    Object.assign(popup.style, {
+      position: "absolute",
+      zIndex: "5000",
+      background: "#1e293b",
+      border: "1px solid #334155",
+      borderRadius: "6px",
+      padding: "8px",
+      boxShadow: "0 10px 15px rgba(0,0,0,0.5)",
+      minWidth: "160px",
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: "8px",
+      marginTop: "4px",
+    });
+
+    // Position directly under button
+    const rect = btnFilter.getBoundingClientRect();
+    popup.style.top = window.scrollY + rect.bottom + 5 + "px";
+    popup.style.left = window.scrollX + rect.left + "px";
+
+    // 3. Define Skills
+    const SKILLS = ["AVI", "CRG", "CAB", "ENG", "FLC", "LDG", "STR", "SHOP"];
+
+    // 4. Create Checkboxes
+    SKILLS.forEach((skill) => {
+      const label = document.createElement("label");
+      Object.assign(label.style, {
+        display: "flex",
+        alignItems: "center",
+        color: "#f8fafc",
+        fontSize: "12px",
+        cursor: "pointer",
+      });
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = skill;
+      cb.style.marginRight = "6px";
+
+      // Check if already active
+      if (filterState.skills.includes(skill)) {
+        cb.checked = true;
+      }
+
+      // Handle Change
+      cb.onchange = () => {
+        const idx = filterState.skills.indexOf(skill);
+        if (cb.checked) {
+          if (idx === -1) filterState.skills.push(skill);
+        } else {
+          if (idx > -1) filterState.skills.splice(idx, 1);
+        }
+        updateFilterUI(); // Update button text/badge
+        render(); // Redraw chart
+      };
+
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(skill));
+      popup.appendChild(label);
+    });
+
+    // 5. Add "Clear All" button
+    const clearBtn = document.createElement("div");
+    clearBtn.textContent = "Clear Filter";
+    Object.assign(clearBtn.style, {
+      gridColumn: "1 / -1",
+      textAlign: "center",
+      fontSize: "11px",
+      color: "#94a3b8",
+      cursor: "pointer",
+      borderTop: "1px solid #334155",
+      paddingTop: "4px",
+      marginTop: "4px",
+    });
+    clearBtn.onclick = () => {
+      filterState.skills = [];
+      updateFilterUI();
+      render();
+      popup.remove();
+    };
+    popup.appendChild(clearBtn);
+
+    document.body.appendChild(popup);
+
+    // 6. Close on outside click
+    const close = (evt) => {
+      if (!popup.contains(evt.target) && evt.target !== btnFilter) {
+        popup.remove();
+        document.removeEventListener("mousedown", close);
+      }
+    };
+    setTimeout(() => document.addEventListener("mousedown", close), 0);
+  };
+}
+
+// Helper to update the button appearance
+function updateFilterUI() {
+  if (!btnFilter) return;
+  const count = filterState.skills.length;
+
+  if (count > 0) {
+    btnFilter.style.background = "#211ed4"; // Blue when active
+    countBadge.style.display = "inline-block";
+    countBadge.textContent = count;
+    btnFilter.firstElementChild.textContent = "Skills";
+  } else {
+    btnFilter.style.background = "#334155"; // Default Slate
+    countBadge.style.display = "none";
+    btnFilter.firstElementChild.textContent = "Filter Skills";
+  }
+}
+/* ============================================================
+   DAY FILTER POPUP (D1, D2, D3...)
+============================================================ */
+
+const btnFilterDay = document.getElementById("btnFilterDay");
+const dayBadge = document.getElementById("filterDayBadge");
+
+if (btnFilterDay) {
+  btnFilterDay.onclick = (e) => {
+    e.stopPropagation();
+
+    // Close existing popups
+    document.querySelectorAll(".day-filter-popup").forEach((p) => p.remove());
+
+    const popup = document.createElement("div");
+    popup.className = "day-filter-popup";
+
+    Object.assign(popup.style, {
+      position: "absolute",
+      zIndex: "5000",
+      background: "#1e293b",
+      border: "1px solid #334155",
+      borderRadius: "6px",
+      padding: "10px",
+      boxShadow: "0 10px 15px rgba(0,0,0,0.5)",
+      minWidth: "180px",
+      color: "#f8fafc",
+      fontSize: "12px",
+    });
+
+    const rect = btnFilterDay.getBoundingClientRect();
+    popup.style.top = window.scrollY + rect.bottom + 5 + "px";
+    popup.style.left = window.scrollX + rect.left + "px";
+
+    popup.innerHTML = `
+      <div style="font-weight:600; margin-bottom:6px;">Filter by Day</div>
+
+      <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <input id="dayFrom" type="number" min="1" placeholder="From"
+          value="${filterState.dayFrom ?? ""}"
+          style="width:70px; padding:4px; background:#0f172a; border:1px solid #334155; color:white; border-radius:4px;">
+        <input id="dayTo" type="number" min="1" placeholder="To"
+          value="${filterState.dayTo ?? ""}"
+          style="width:70px; padding:4px; background:#0f172a; border:1px solid #334155; color:white; border-radius:4px;">
+      </div>
+
+      <div style="display:flex; justify-content:space-between;">
+        <button id="clearDay"
+          style="background:none; border:none; color:#94a3b8; cursor:pointer;">
+          Clear
+        </button>
+        <button id="applyDay"
+          style="background:#2563eb; border:none; color:white; padding:4px 10px; border-radius:4px;">
+          Apply
+        </button>
+      </div>
+    `;
+
+    popup.querySelector("#applyDay").onclick = () => {
+      const from = popup.querySelector("#dayFrom").value;
+      const to = popup.querySelector("#dayTo").value;
+
+      filterState.dayFrom = from ? parseInt(from) : null;
+      filterState.dayTo = to ? parseInt(to) : null;
+
+      updateDayFilterUI();
+      render();
+      popup.remove();
+    };
+
+    popup.querySelector("#clearDay").onclick = () => {
+      filterState.dayFrom = null;
+      filterState.dayTo = null;
+
+      updateDayFilterUI();
+      render();
+      popup.remove();
+    };
+
+    document.body.appendChild(popup);
+
+    const close = (evt) => {
+      if (!popup.contains(evt.target) && evt.target !== btnFilterDay) {
+        popup.remove();
+        document.removeEventListener("mousedown", close);
+      }
+    };
+    setTimeout(() => document.addEventListener("mousedown", close), 0);
+  };
+}
+
+function updateDayFilterUI() {
+  const active = filterState.dayFrom !== null || filterState.dayTo !== null;
+
+  if (active) {
+    btnFilterDay.style.background = "#2563eb";
+    dayBadge.style.display = "inline-block";
+  } else {
+    btnFilterDay.style.background = "#334155";
+    dayBadge.style.display = "none";
+  }
+}
