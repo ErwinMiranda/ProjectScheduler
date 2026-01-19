@@ -51,22 +51,28 @@ function ensureTooltip() {
   document.body.appendChild(tip);
   return tip;
 }
-const LAST_COLOR_KEY = "lastBarColor";
-const DEFAULT_BAR_COLOR = "#2563eb";
-
-function getLastUsedColor() {
-  return localStorage.getItem(LAST_COLOR_KEY) || DEFAULT_BAR_COLOR;
-}
-
-function setLastUsedColor(color) {
-  localStorage.setItem(LAST_COLOR_KEY, color);
-}
 
 /* ============================================================
    DEPENDENCY & REMARKS EDITOR (Context Menu)
    - Removed: Bar Color Picker
    - Added: Remarks Textarea
 ============================================================ */
+function getAllDescendants(taskId, tasks) {
+  const result = new Set();
+
+  function visit(parentId) {
+    tasks.forEach((t) => {
+      if (t.depends === parentId && !result.has(t.id)) {
+        result.add(t.id);
+        visit(t.id);
+      }
+    });
+  }
+
+  visit(taskId);
+  return result;
+}
+
 function openDependencyEditor(task, anchorEl, clientX, clientY) {
   document.querySelector(".dep-editor")?.remove();
 
@@ -86,12 +92,25 @@ function openDependencyEditor(task, anchorEl, clientX, clientY) {
     color: "#f8fafc",
     fontFamily: "inherit",
   });
+  const dependencyOptions = tasks
+    .filter((t) => t.id !== task.id)
+    .map(
+      (t) =>
+        `<option value="${t.id}" ${
+          t.id === task.depends ? "selected" : ""
+        }>${escapeHtml(t.title)}</option>`,
+    )
+    .join("");
 
   editor.innerHTML = `
-    <h4 style="margin:0 0 10px 0; font-size:13px; color:#cbd5e1; border-bottom:1px solid #334155; padding-bottom:6px;">
-      Edit Task Details
-    </h4>
-    
+    <h4 class="dep-editor-header"
+    style="margin:0 0 10px 0; font-size:13px; color:#cbd5e1;
+           border-bottom:1px solid #334155; padding-bottom:6px;
+           cursor: move;">
+  ${escapeHtml(task.title)}
+</h4>
+
+
     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:10px;">
       <label style="font-size:11px; color:#94a3b8;">
         Lag (Days) <input type="number" class="dep-lag" min="0" value="${
@@ -104,6 +123,17 @@ function openDependencyEditor(task, anchorEl, clientX, clientY) {
         }" style="width:100%; background:#0f172a; border:1px solid #334155; color:white; padding:4px; border-radius:4px; margin-top:4px;">
       </label>
     </div>
+
+        <label style="font-size:11px; color:#94a3b8; display:block; margin-bottom:10px;">
+  Depends On
+  <select class="dep-parent"
+    style="width:100%; background:#0f172a; border:1px solid #334155;
+           color:white; padding:4px; border-radius:4px; margin-top:4px;">
+    <option value="">— None —</option>
+    ${dependencyOptions}
+  </select>
+</label>
+
 
     <label style="font-size:11px; color:#94a3b8; display:block; margin-bottom:10px;">
       Dependency Type
@@ -138,6 +168,33 @@ function openDependencyEditor(task, anchorEl, clientX, clientY) {
   const typeSelect = editor.querySelector(".dep-type");
   const remarksInput = editor.querySelector(".dep-remarks"); // New
   const netEl = editor.querySelector(".net");
+  const parentSelect = editor.querySelector(".dep-parent");
+
+  // Find all invalid parents (self + descendants)
+  const blockedIds = getAllDescendants(task.id, tasks);
+  blockedIds.add(task.id);
+
+  // Populate dropdown
+  parentSelect.innerHTML = `<option value="">No Dependency</option>`;
+
+  tasks.forEach((t) => {
+    const opt = document.createElement("option");
+    opt.value = t.id;
+    opt.textContent = t.title;
+
+    // 🔒 BLOCK cycles
+    if (blockedIds.has(t.id)) {
+      opt.disabled = true;
+      opt.textContent += " (not allowed)";
+    }
+
+    // Preselect current dependency
+    if (task.depends === t.id) {
+      opt.selected = true;
+    }
+
+    parentSelect.appendChild(opt);
+  });
 
   typeSelect.value = task.depType || "FS";
 
@@ -159,17 +216,28 @@ function openDependencyEditor(task, anchorEl, clientX, clientY) {
   editor.querySelector(".apply").onclick = () => {
     pushHistory();
 
-    // Save Values
+    // 1. Read dependency parent
+    const selectedParentId = parentSelect.value || "";
+
+    // 2. Apply dependency
+    task.depends = selectedParentId;
+
+    // 3. Save dependency parameters
     task.lagDays = Math.max(0, Number(lagInput.value) || 0);
     task.leadDays = Math.max(0, Number(leadInput.value) || 0);
     task.depType = typeSelect.value;
-    task.remarks = remarksInput.value.trim(); // <--- SAVE REMARKS
 
-    // Trigger Update
+    // 4. Save remarks
+    task.remarks = remarksInput.value.trim();
+
+    // 5. Recompute schedule
     window.dispatchEvent(new CustomEvent("localchange"));
     applyDependencies();
     render();
+
+    // 6. Refresh dependency dropdowns elsewhere (safe async)
     import("./app.js").then((m) => m.refreshDependencyDropdown());
+
     editor.remove();
   };
 
@@ -186,6 +254,47 @@ function openDependencyEditor(task, anchorEl, clientX, clientY) {
   };
   document.addEventListener("keydown", close);
   setTimeout(() => document.addEventListener("mousedown", close));
+  // ============================================================
+  // DRAGGABLE POPUP
+  // ============================================================
+  const header = editor.querySelector(".dep-editor-header");
+
+  let isDragging = false;
+  let startX = 0;
+  let startY = 0;
+  let startLeft = 0;
+  let startTop = 0;
+
+  header.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    isDragging = true;
+
+    startX = e.clientX;
+    startY = e.clientY;
+
+    const rect = editor.getBoundingClientRect();
+    startLeft = rect.left;
+    startTop = rect.top;
+
+    document.body.style.userSelect = "none";
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (!isDragging) return;
+
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    editor.style.left = startLeft + dx + "px";
+    editor.style.top = startTop + dy + "px";
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (!isDragging) return;
+
+    isDragging = false;
+    document.body.style.userSelect = "";
+  });
 }
 
 /* --------------------------------------------------------------------------
@@ -233,33 +342,74 @@ function drawTodayLine(minDate, maxDate, scale, container) {
 /* --------------------------------------------------------------------------
    Main render
 ----------------------------------------------------------------------------*/
+/* renderer.js */
+import { filterState } from "./state.js"; // <--- Ensure filterState is imported
+
 export function render() {
   const taskLeftList = document.getElementById("taskLeftList");
   const rowsRight = document.getElementById("rowsRight");
   const timelineHeader = document.getElementById("timelineHeader");
   const depOverlay = document.getElementById("depOverlay");
 
+  // 1. APPLY FILTER (The Logic)
+  // We determine WHICH tasks to show before we draw anything
+  let visibleTasks = tasks;
+
+  visibleTasks = visibleTasks.filter((t) => {
+    // --- SKILL FILTER ---
+    if (filterState.skills.length > 0) {
+      if (!t.skill) return false;
+      if (!filterState.skills.some((s) => t.skill.includes(s))) return false;
+    }
+
+    // --- DAY FILTER ---
+    if (filterState.dayFrom !== null || filterState.dayTo !== null) {
+      const projectStart = getProjectStartDate();
+      const startDay = daysBetween(projectStart, t.start) + 1;
+      const endDay = daysBetween(projectStart, t.end) + 1;
+
+      if (filterState.dayFrom !== null && endDay < filterState.dayFrom)
+        return false;
+
+      if (filterState.dayTo !== null && startDay > filterState.dayTo)
+        return false;
+    }
+
+    return true;
+  });
+
+  // 2. SETUP DATES & DIMENSIONS
   const minDate = computeMinDate();
-  const [minD, maxD] = getBounds(minDate); // We get maxD here
+  const [minD, maxD] = getBounds(minDate);
   const totalDays = daysBetween(minD, maxD) + 1;
   const width = totalDays * scale;
 
+  // 3. CLEAR DOM
   taskLeftList.innerHTML = "";
   rowsRight.innerHTML = "";
   timelineHeader.innerHTML = "";
   depOverlay.innerHTML = "";
 
+  // 4. CRITICAL PATH
   const criticalSet = showCriticalPath ? computeCriticalPath(tasks) : null;
 
+  // 5. DRAW
   buildTimelineHeader(timelineHeader, minD, totalDays);
-  buildRows(taskLeftList, rowsRight, minD, width, criticalSet);
+  enableTimelineColumnHover(timelineHeader, rowsRight);
 
-  // FIX: Pass 'maxD' here so it knows when to stop drawing
+  // IMPORTANT: Pass 'visibleTasks' as the 6th argument
+  buildRows(taskLeftList, rowsRight, minD, width, criticalSet, visibleTasks);
+
   drawTodayLine(minD, maxD, scale, depOverlay);
 
+  // 6. POST-RENDER CALCULATIONS
   requestAnimationFrame(() => {
     syncRowHeights(taskLeftList, rowsRight);
     repositionBarLabels(rowsRight);
+
+    // Note: drawDeps might need to know which tasks are visible
+    // to avoid drawing lines to hidden tasks.
+    // Usually, strict dependency drawers handle missing DOM elements gracefully.
     drawDeps(minD, scale, width, rowsRight);
   });
 }
@@ -324,6 +474,7 @@ function buildTimelineHeader(timelineHeader, minDate, totalDays) {
 
     // --- DAY CELL (1, 2, 3...) ---
     const dayCell = document.createElement("div");
+    dayCell.dataset.dayIndex = i;
     dayCell.classList.add("day-cell");
     dayCell.style.width = scale + "px";
     dayCell.style.display = "flex";
@@ -342,6 +493,7 @@ function buildTimelineHeader(timelineHeader, minDate, totalDays) {
 
     // --- RELATIVE CELL (D1, D2...) ---
     const relCell = document.createElement("div");
+    relCell.dataset.dayIndex = i;
     relCell.style.width = scale + "px";
     relCell.style.display = "flex";
     relCell.style.alignItems = "center";
@@ -432,19 +584,31 @@ function getProjectStartDate() {
 /* --------------------------------------------------------------------------
    Build LEFT + RIGHT rows (Editable Relative Days)
 ----------------------------------------------------------------------------*/
-function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
+// 1. ADD 'taskList' as the 6th argument
+function buildRows(
+  taskLeftList,
+  rowsRight,
+  minDate,
+  width,
+  criticalSet,
+  taskList,
+) {
   const barH =
     parseInt(
       getComputedStyle(document.documentElement).getPropertyValue(
-        "--bar-height"
-      )
+        "--bar-height",
+      ),
     ) || 20;
   const tooltip = ensureTooltip();
 
   // 1. Determine Project Start (Anchor for Day 1)
   const projectStart = getProjectStartDate();
 
-  tasks.forEach((task, idx) => {
+  // 2. CRITICAL FIX: Use the passed 'taskList' (filtered) or fallback to global 'tasks'
+  const renderList = taskList || tasks;
+
+  // 3. Iterate over 'renderList' instead of 'tasks'
+  renderList.forEach((task, idx) => {
     if (!task.status) task.status = "Open";
 
     // --- CALCULATE RELATIVE DAYS ---
@@ -556,18 +720,7 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
         el.addEventListener("mousedown", (e) => e.stopPropagation());
       }
     });
-    statusSelect.addEventListener("change", (e) => {
-      pushHistory();
-      const newStatus = e.target.value;
-      task.status = newStatus;
-      statusSelect.style.background = getStatusBg(newStatus);
-      window.dispatchEvent(new CustomEvent("localchange"));
-      render();
-    });
 
-    [delBtn, insBtn, statusSelect].forEach((el) => {
-      el.addEventListener("mousedown", (e) => e.stopPropagation());
-    });
     insBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -635,9 +788,28 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
     const rowGrid = document.createElement("div");
     rowGrid.className = "row-grid";
     rowGrid.style.minWidth = width + "px";
+    rowGrid.style.position = "relative"; // 🔥 REQUIRED
+
     const gridBack = document.createElement("div");
     gridBack.className = "grid-back";
     gridBack.style.minWidth = width + "px";
+    gridBack.style.position = "absolute"; // 🔥 REQUIRED
+    gridBack.style.top = "0";
+    gridBack.style.left = "0";
+    gridBack.style.right = "0";
+    gridBack.style.bottom = "0";
+
+    for (let i = 0; i < Math.ceil(width / scale); i++) {
+      const col = document.createElement("div");
+      col.className = "grid-col";
+      col.dataset.dayIndex = i;
+      col.style.position = "absolute"; // 🔥 REQUIRED
+      col.style.left = i * scale + "px";
+      col.style.top = "0";
+      col.style.bottom = "0"; // 🔥 FULL HEIGHT
+      col.style.width = scale + "px";
+      gridBack.appendChild(col);
+    }
 
     const bar = document.createElement("div");
     bar.className = "bar";
@@ -701,7 +873,7 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
            <div style="margin-bottom:2px;">
              <span style="color:#94a3b8">Depends On:</span> 
              <span style="color:#f59e0b; font-weight:600;">${escapeHtml(
-               parent.title
+               parent.title,
              )}</span>
            </div>
            <div>
@@ -741,8 +913,8 @@ function buildRows(taskLeftList, rowsRight, minDate, width, criticalSet) {
           <div>
             <span style="color:#94a3b8">Timeline:</span> 
             <strong>Day ${daysBetween(projectStart, t.start) + 1} - Day ${
-        daysBetween(projectStart, t.end) + 1
-      }</strong>
+              daysBetween(projectStart, t.end) + 1
+            }</strong>
             <span style="color:#64748b; font-size: 11px;"> (${
               daysBetween(t.start, t.end) + 1
             }d)</span>
@@ -836,4 +1008,29 @@ function positionContextMenu(menuEl, x, y) {
   menuEl.style.left = `${left}px`;
   menuEl.style.top = `${top}px`;
   menuEl.style.visibility = "visible";
+}
+function enableTimelineColumnHover(timelineHeader, rowsRight) {
+  timelineHeader.addEventListener("mouseover", (e) => {
+    const cell = e.target.closest("[data-day-index]");
+    if (!cell) return;
+
+    const idx = cell.dataset.dayIndex;
+    highlightColumn(idx, rowsRight, true);
+    cell.classList.add("hover-col");
+  });
+
+  timelineHeader.addEventListener("mouseout", (e) => {
+    const cell = e.target.closest("[data-day-index]");
+    if (!cell) return;
+
+    const idx = cell.dataset.dayIndex;
+    highlightColumn(idx, rowsRight, false);
+    cell.classList.remove("hover-col");
+  });
+}
+
+function highlightColumn(dayIndex, rowsRight, on) {
+  rowsRight
+    .querySelectorAll(`.grid-col[data-day-index="${dayIndex}"]`)
+    .forEach((col) => col.classList.toggle("hover-col", on));
 }
