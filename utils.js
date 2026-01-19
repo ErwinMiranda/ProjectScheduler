@@ -178,63 +178,7 @@ export function toDateInput(d) {
   const dd = String(date.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
-/* ============================================================
-   HELPER: CHRONOLOGICAL SORT (By Start Date)
-   Replaces the old "Parent -> Child" logic.
-============================================================ */
-export function organizeTasksByWaterfall(taskList) {
-  // 1. Create Maps for fast lookup
-  const taskMap = new Map();
-  const childrenMap = new Map();
-  const roots = [];
 
-  taskList.forEach((t) => {
-    taskMap.set(t.id, t);
-    childrenMap.set(t.id, []);
-  });
-
-  // 2. Identify Roots (No parent, or parent not in this list) vs Children
-  taskList.forEach((t) => {
-    // Note: t.depends is the ID of the predecessor (FS link)
-    if (t.depends && taskMap.has(t.depends)) {
-      childrenMap.get(t.depends).push(t);
-    } else {
-      roots.push(t);
-    }
-  });
-
-  // 3. Sort Roots by Start Date (The main timeline backbone)
-  roots.sort((a, b) => new Date(a.start) - new Date(b.start));
-
-  // 4. Recursive Traversal (DFS) to build final order
-  const sortedList = [];
-  const visitedIds = new Set();
-
-  function traverse(task) {
-    if (visitedIds.has(task.id)) return;
-    visitedIds.add(task.id);
-    sortedList.push(task);
-
-    // Find children (dependents)
-    const kids = childrenMap.get(task.id) || [];
-
-    // Sort children by Date so siblings appear chronologically
-    kids.sort((a, b) => new Date(a.start) - new Date(b.start));
-
-    // Visit children immediately to keep them under parent (Visual Grouping)
-    kids.forEach((kid) => traverse(kid));
-  }
-
-  // Execute Traversal
-  roots.forEach((root) => traverse(root));
-
-  // 5. Re-assign Row Numbers (Optional, keeps data clean)
-  sortedList.forEach((t, index) => {
-    t.row = index;
-  });
-
-  return sortedList;
-}
 /* ============================================================
    PRINT / EXPORT TO PDF (Simplified - Trust Natural Width)
    Place in utils.js
@@ -336,7 +280,7 @@ export function ensurePrintButton() {
 
           // Hide Add/Del Header AND Adjust Task Name Header
           const headerDivs = clonedDoc.querySelectorAll(
-            ".left-timeline-header > div"
+            ".left-timeline-header > div",
           );
           headerDivs.forEach((div) => {
             const text = div.textContent.trim().toLowerCase();
@@ -437,7 +381,7 @@ export function ensurePrintButton() {
         margin,
         position,
         usableWidth,
-        pdfImageHeight
+        pdfImageHeight,
       );
       heightLeft -= pageHeight - position;
 
@@ -450,7 +394,7 @@ export function ensurePrintButton() {
           margin,
           position,
           usableWidth,
-          pdfImageHeight
+          pdfImageHeight,
         );
         heightLeft -= pageHeight;
       }
@@ -569,7 +513,7 @@ export function attachSkillPicker(input) {
       // Update input immediately (Live Update)
       cb.onchange = () => {
         const checked = Array.from(popup.querySelectorAll("input:checked")).map(
-          (c) => c.value
+          (c) => c.value,
         );
         input.value = checked.join(",");
       };
@@ -616,4 +560,50 @@ export function attachSkillPicker(input) {
       document.addEventListener("scroll", closePopup, true);
     }, 0);
   };
+}
+/* app.js */
+
+// Reusable function to apply your specific "Sort by Date" rules
+export function sortTasksByDate() {
+  tasks.sort((a, b) => {
+    /* --------------------------------------------------
+         RULE 1: START DATE (earliest first)
+      -------------------------------------------------- */
+    const dateDiff = a.start - b.start;
+    if (dateDiff !== 0) return dateDiff;
+
+    /* --------------------------------------------------
+         RULE 2: PARENT / CHILD (parent above child)
+      -------------------------------------------------- */
+    if (a.depends === b.id) return 1;
+    if (b.depends === a.id) return -1;
+
+    /* --------------------------------------------------
+         RULE 3: PART OF DEPENDENCY CHAIN
+         (parent OR child OR middle)
+      -------------------------------------------------- */
+    const aInChain = !!a.depends || tasks.some((t) => t.depends === a.id);
+    const bInChain = !!b.depends || tasks.some((t) => t.depends === b.id);
+
+    if (aInChain !== bInChain) {
+      return aInChain ? -1 : 1;
+    }
+
+    /* --------------------------------------------------
+         RULE 4: DURATION (UPDATED)
+         - BOTH in chain  → SHORTER FIRST
+         - BOTH floating  → SHORTER FIRST
+      -------------------------------------------------- */
+    const durA = a.end - a.start;
+    const durB = b.end - b.start;
+
+    if (durA !== durB) {
+      return durA - durB; // ✅ shorter always first
+    }
+
+    /* --------------------------------------------------
+         RULE 5: FINAL STABLE TIEBREAKER
+      -------------------------------------------------- */
+    return (a.row ?? 0) - (b.row ?? 0);
+  });
 }
