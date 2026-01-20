@@ -509,6 +509,7 @@ document.getElementById("confirmSaveTemplate").onclick = async () => {
       index,
       title: t.title,
       duration,
+      skill: t.skill || "",
       dependsIndex: depIdx,
       depType: t.depType || "FS",
       lagDays: t.lagDays || 0,
