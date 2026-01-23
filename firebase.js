@@ -41,6 +41,8 @@ export async function addTask(wo, acreg, title, start, end, dep) {
     title,
     start: new Date(start).toISOString(),
     end: new Date(end).toISOString(),
+    rev_sdate: new Date(start).toISOString(),
+    rev_edate: new Date(end).toISOString(),
     status: "Open", // ✅ Added Default
     depends: dep,
     row: Date.now(),
@@ -62,6 +64,8 @@ export async function saveTask(task) {
     title: task.title || "",
     start: task.start.toISOString(),
     end: task.end.toISOString(),
+    rev_sdate: task.start.toISOString(),
+    rev_edate: task.end.toISOString(),
     status: task.status || "Open", // ✅ Added
     skill: data.skill || "",
     remarks: data.remarks || "",
@@ -92,6 +96,8 @@ export function listenTasksByWO(wo, callback) {
         title: data.title || "",
         start: new Date(data.start),
         end: new Date(data.end),
+        rev_sdate: new Date(data.start),
+        rev_edate: new Date(data.end),
         status: data.status || "Open", // ✅ Added
         skill: data.skill || "",
         remarks: data.remarks || "",
@@ -125,6 +131,8 @@ export async function fetchTasksByWOOnce(wo) {
       title: data.title || "",
       start: new Date(data.start),
       end: new Date(data.end),
+      rev_sdate: new Date(data.start),
+      rev_edate: new Date(data.end),
       duration:
         data.duration ||
         Math.round((new Date(data.end) - new Date(data.start)) / 86400000) + 1,
@@ -171,6 +179,15 @@ export async function batchSaveTasks(taskArray) {
           ? t.start.toISOString()
           : new Date(t.start).toISOString(),
       end:
+        t.end instanceof Date
+          ? t.end.toISOString()
+          : new Date(t.end).toISOString(),
+
+      rev_sdate:
+        t.start instanceof Date
+          ? t.start.toISOString()
+          : new Date(t.start).toISOString(),
+      rev_edate:
         t.end instanceof Date
           ? t.end.toISOString()
           : new Date(t.end).toISOString(),
