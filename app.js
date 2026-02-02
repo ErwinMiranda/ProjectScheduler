@@ -45,7 +45,13 @@ const headerControls = document.querySelector(".header-controls");
 const last = localStorage.getItem("selectedWO");
 let currentWO = null;
 let unsavedChanges = false;
+const btnMilestone = document.getElementById("btnMilestone");
 
+if (btnMilestone) {
+  btnMilestone.addEventListener("click", () => {
+    window.open("milestone.html", "_blank");
+  });
+}
 /* ============================================================
    SAVE / DISCARD CONTROLS
 ============================================================ */
