@@ -49,7 +49,7 @@ const btnMilestone = document.getElementById("btnMilestone");
 
 if (btnMilestone) {
   btnMilestone.addEventListener("click", () => {
-    window.open("milestone.html", "_blank");
+    window.open("milestone", "_blank");
   });
 }
 /* ============================================================
