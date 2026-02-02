@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Web Based MilestonePlan</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+
+  <body>
+    <div class="plan-header">
+      <div class="plan-heading" id="date-range-heading">Loading…</div>
+      <div>
+        <button onclick="logout()" class="logout-btn">Logout</button>
+        <button onclick="window.print()" class="print-btn">Print / PDF</button>
+      </div>
+    </div>
+
+    <div id="controls">
+      <label for="wo-filter" style="padding-top: 4px">Select WO:</label>
+      <select id="wo-filter" style="width: 160px"></select>
+      <button id="wo-search">Search</button>
+      <button
+        id="open-batch-add-btn"
+        style="margin-left: 10px; background: #28a745; color: white"
+      >
+        Batch Add Milestone
+      </button>
+      <div
+        style="
+          flex: 1;
+          display: flex;
+          justify-content: right;
+          align-items: center;
+          min-width: 400px;
+        "
+      >
+        <div class="legend-container">
+          <div class="legend-item">
+            <span class="legend-swatch swatch-open"></span>
+            <span class="legend-label">Open</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-swatch swatch-closed"></span>
+            <span class="legend-label">Closed</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-swatch swatch-advance"></span>
+            <span class="legend-label">Advance</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-swatch swatch-delay"></span>
+            <span class="legend-label">Delay</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-swatch swatch-today"></span>
+            <span class="legend-label">Today</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-swatch swatch-sunday"></span>
+            <span class="legend-label">Sunday &nbsp;</span>
+          </div>
+        </div>
+      </div>
+      <div
+        id="status-indicator"
+        style="font-size: 13px; color: #363434; padding-right: 5px"
+      >
+        Firestore: connecting…
+      </div>
+    </div>
+
+    <!-- Skill Toolbar + CP Toggle -->
+    <div
+      style="
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
+        flex-wrap: wrap;
+        gap: 6px;
+      "
+    >
+      <div
+        id="skill-toolbar"
+        style="display: flex; gap: 6px; flex-wrap: wrap"
+      ></div>
+
+      <div style="display: flex; gap: 6px">
+        <button
+          id="cp-toggle-btn"
+          style="
+            padding: 6px 12px;
+            border: none;
+            background: #dc2626;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            white-space: nowrap;
+          "
+        >
+          Show CP Only
+        </button>
+
+        <button
+          id="cp-highlight-btn"
+          style="
+            padding: 6px 12px;
+            border: none;
+            background: #111;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            white-space: nowrap;
+          "
+        >
+          Highlight CP
+        </button>
+      </div>
+    </div>
+
+    <div id="matrix-container"></div>
+
+    <!-- Modal for create/edit -->
+    <div id="task-modal" class="modal" role="dialog">
+      <div class="card">
+        <h3 id="modal-title">Edit Milestone</h3>
+        <div class="form-row">
+          <div style="flex: 1">
+            <label>Milestone ID (optional)</label>
+            <input
+              id="f-taskid"
+              type="text"
+              placeholder="taskid or leave blank to auto"
+            />
+          </div>
+          <div style="flex: 1">
+            <label>Skill</label>
+            <input id="f-skill" type="text" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div style="flex: 1">
+            <label>Planned Start (start)</label>
+            <input id="f-start" type="date" />
+          </div>
+          <div style="flex: 1">
+            <label>Planned End (end)</label>
+            <input id="f-end" type="date" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div style="flex: 1">
+            <label>Revised Start (rev_sdate)</label>
+            <input id="f-rev_sdate" type="date" />
+          </div>
+          <div style="flex: 1">
+            <label>Revised End (rev_edate)</label>
+            <input id="f-rev_edate" type="date" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div style="flex: 1">
+            <label>Title</label>
+            <input id="f-tasktitle" type="text" />
+          </div>
+          <div style="flex: 1">
+            <label>A/C Reg</label>
+            <input id="f-acreg" type="text" readonly />
+          </div>
+        </div>
+        <div>
+          <label>Remarks</label>
+          <textarea id="f-remarks"></textarea>
+        </div>
+        <div class="form-row">
+          <div style="flex: 1">
+            <label>Status</label>
+            <div style="display: flex; gap: 15px; padding-top: 6px">
+              <label
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 5px;
+                  font-weight: normal;
+                  margin: 0;
+                  cursor: pointer;
+                "
+              >
+                <input
+                  type="radio"
+                  name="status_radio"
+                  id="f-status-open"
+                  value="open"
+                  checked
+                />
+                Open
+              </label>
+              <label
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 5px;
+                  font-weight: normal;
+                  margin: 0;
+                  cursor: pointer;
+                "
+              >
+                <input
+                  type="radio"
+                  name="status_radio"
+                  id="f-status-closed"
+                  value="Closed"
+                />
+                Closed
+              </label>
+            </div>
+          </div>
+          <div style="flex: 1">
+            <label>Workorder</label>
+            <input id="f-workorder" type="text" readonly />
+          </div>
+        </div>
+        <div class="actions">
+          <button id="delete-task-btn" class="danger">Delete</button>
+          <button id="cancel-modal" class="muted">Cancel</button>
+          <button id="save-modal" class="primary">Save</button>
+        </div>
+      </div>
+    </div>
+    <!-- Bulk Action Modal (Replan or Close) -->
+    <div id="bulk-action-modal" class="modal" role="dialog">
+      <div class="card" style="width: 400px">
+        <h3 id="bulk-action-title">Bulk Action</h3>
+        <div style="margin-bottom: 8px">
+          <label for="bulk-action-date">Action Date</label>
+          <input
+            id="bulk-action-date"
+            type="date"
+            style="width: 100%; box-sizing: border-box; padding: 6px"
+          />
+        </div>
+        <div>
+          <label for="bulk-action-remarks">Remarks</label>
+          <textarea
+            id="bulk-action-remarks"
+            style="width: 100%; min-height: 80px"
+          ></textarea>
+        </div>
+        <div class="actions">
+          <button id="bulk-action-cancel" class="muted">Cancel</button>
+          <button
+            id="bulk-edit-details"
+            class="muted"
+            style="margin-right: auto"
+          >
+            Edit Details
+          </button>
+          <button id="bulk-new-plan-confirm" class="primary">New Plan</button>
+          <button id="bulk-replan-confirm" class="secondary">
+            Confirm Replan
+          </button>
+          <button id="bulk-close-confirm" class="danger">Confirm Close</button>
+        </div>
+      </div>
+    </div>
+    <div id="batch-add-modal" class="modal" role="dialog">
+      <div class="card" style="width: 700px">
+        <h3>Batch Add Milestone</h3>
+        <p style="font-size: 13px; color: #333; margin-top: 0">
+          Add milestone to the queue. They will all be saved to the current Work
+          Order when you click "Save All".
+        </p>
+
+        <div class="form-row" style="align-items: flex-end">
+          <div style="flex: 2">
+            <label>Milestone Title</label>
+            <input id="b-tasktitle" type="text" />
+          </div>
+          <div style="flex: 1">
+            <label>Skill</label>
+            <select id="b-skill"></select>
+          </div>
+          <button id="add-to-queue-btn" type="button" class="secondary">
+            Add to Queue
+          </button>
+        </div>
+        <div class="form-row">
+          <div style="flex: 1">
+            <label>Start Date</label>
+            <input id="b-start" type="date" />
+          </div>
+          <div style="flex: 1">
+            <label>End Date</label>
+            <input id="b-end" type="date" />
+          </div>
+        </div>
+
+        <hr style="margin: 15px 0" />
+
+        <label>Milestone Queue (<span id="queue-count">0</span>)</label>
+        <div
+          id="task-queue-list"
+          style="
+            max-height: 200px;
+            overflow-y: auto;
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 8px;
+            border-radius: 4px;
+            min-height: 50px;
+          "
+        ></div>
+
+        <div class="actions">
+          <button id="batch-add-cancel" class="muted">Cancel</button>
+          <button id="batch-save-all-btn" class="primary">Save All</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating remarks editor -->
+    <div id="remarks-editor">
+      <textarea id="remarks-text" style="width: 300px; height: 100px"></textarea
+      ><br />
+      <div
+        style="
+          display: flex;
+          gap: 8px;
+          justify-content: flex-end;
+          margin-top: 8px;
+        "
+      >
+        <button id="remarks-save" class="primary">Save</button>
+        <button id="remarks-cancel" class="muted">Cancel</button>
+        <button id="remarks-close-task" class="danger">Close Milestone</button>
+      </div>
+    </div>
+    <!-- ENTRY SCRIPT -->
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>
