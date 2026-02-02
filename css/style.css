@@ -1,0 +1,553 @@
+:root {
+  --bg-top: #05164d; /* Lufthansa Blue */
+  --bg-bottom: #05164d; /* Set to same for a solid header */
+  --card: rgba(255, 255, 255, 0.08);
+  --muted: #d1d5db; /* A cleaner light gray */
+  --accent: #ffb900; /* Lufthansa Yellow */
+  --error: #ef4444;
+  --radius: 14px;
+}
+/* --- trimmed / same style as you provided with minor adjustments --- */
+body {
+  font-family: Arial, sans-serif;
+  padding: 10px;
+  margin: 0;
+  background: #fafafa;
+}
+.plan-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(to bottom, var(--bg-top), var(--bg-bottom));
+  padding: 8px 12px;
+  border-radius: var(--radius);
+}
+
+.plan-heading {
+  font-size: 18px;
+  font-weight: 700;
+  color: #d0d0d0;
+}
+
+#controls {
+  position: sticky;
+  top: 47px;
+  z-index: 100;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+  margin-top: 10px;
+  background: #ffffff;
+  height: 50px;
+  border-bottom: 1px solid #ccc;
+}
+
+#matrix-container {
+  overflow: auto;
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 6px;
+  height: 85vh;
+}
+table {
+  width: 100%;
+  border-spacing: 0;
+  min-width: 1000px;
+  border-collapse: separate;
+}
+th,
+td {
+  padding: 5px;
+  min-width: 120px;
+  border-left: 1px solid #ccc;
+  border-right: 1px solid #ccc;
+  box-sizing: border-box;
+}
+th {
+  background: #f4f4f4;
+  padding: 5px;
+  border-bottom: 1px solid #ccc;
+  border-top: 1px solid #ccc;
+  position: sticky;
+  top: 0;
+  z-index: 21;
+}
+tr.skill-row td {
+  background: #ecf0f1;
+  padding: 0px 0px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  position: sticky;
+  left: 0;
+  z-index: 6;
+}
+table th:first-child,
+table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 14;
+  background: #ffffff;
+  border-right: 1px solid #ccc;
+}
+.sunday {
+  background: #fccc7869;
+}
+.open {
+  background: #fbffd6;
+}
+.closed {
+  background: #d4f7d4;
+}
+.cell-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  height: 42px;
+  position: relative;
+}
+.glow-line {
+  position: absolute;
+  top: 50%;
+  height: 2px;
+  width: 100%;
+  z-index: 1;
+  transform: translateY(-50%);
+}
+.start-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+}
+.task-block {
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 2px solid #ccc;
+  background: white;
+  font-size: 12px;
+  cursor: grab;
+  height: 100%;
+  width: 100%;
+  display: block;
+  position: relative;
+  z-index: 2;
+  box-sizing: border-box;
+}
+.task-block.advance {
+  border-color: rgb(2, 255, 2);
+  animation: pulseGreen 2s infinite;
+}
+.task-block.delay {
+  border-color: rgb(255, 0, 0);
+  animation: pulseRed 2s infinite;
+}
+.task-block.ontime {
+  border-color: gray;
+}
+@keyframes pulseRed {
+  0% {
+    box-shadow: 0 0 4px red;
+  }
+  50% {
+    box-shadow: 0 0 12px red;
+  }
+  100% {
+    box-shadow: 0 0 4px red;
+  }
+}
+@keyframes pulseGreen {
+  0% {
+    box-shadow: 0 0 4px rgb(1, 245, 1);
+  }
+  50% {
+    box-shadow: 0 0 12px rgb(0, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 4px rgb(2, 248, 2);
+  }
+}
+td.drop-target {
+  outline: 3px dashed rgba(52, 152, 219, 0.6);
+}
+/* Modal & remarks editor */
+.modal {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 9999;
+}
+.modal .card {
+  width: 760px;
+  background: white;
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+}
+.form-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+label {
+  font-size: 12px;
+  color: #333;
+  margin-bottom: 4px;
+  display: block;
+}
+input[type="text"],
+input[type="date"],
+textarea,
+select {
+  padding: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+}
+textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+.modal .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+button {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+
+.primary {
+  background: var(--accent);
+  color: #000;
+}
+.secondary {
+  background: #05164d; /* A standard blue */
+  color: #fff;
+}
+.danger {
+  background: #e74c3c;
+  color: #fff;
+}
+.muted {
+  background: #ddd;
+}
+#remarks-editor {
+  position: absolute;
+  z-index: 9998;
+  display: none;
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 8px;
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+}
+.inline-edit {
+  outline: 1px dashed rgba(0, 0, 0, 0.13);
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.glow-span {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 2px;
+  width: 100%;
+  transform: translateY(-50%);
+}
+
+.glow-advance {
+  background-color: #8ac08d;
+}
+.glow-delay {
+  background-color: #e08b8b;
+}
+.glow-ontime {
+  background-color: #d0d0d0;
+}
+
+.start-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.dot-advance {
+  background-color: #1ff129;
+}
+.dot-delay {
+  background-color: #f02929;
+}
+.dot-ontime {
+  background-color: #d0d0d0;
+}
+.task-block {
+  position: relative;
+  z-index: 2;
+}
+
+.glow-span,
+.start-dot {
+  z-index: 1;
+}
+td {
+  position: relative;
+}
+.half-glow {
+  position: absolute;
+  top: 50%;
+  height: 2px;
+  width: 50%;
+  transform: translateY(-50%);
+}
+
+.half-glow.right {
+  left: 50%;
+}
+.half-glow.left {
+  left: 0;
+}
+.skill-row {
+  background: #a3a0a0;
+  z-index: 6;
+  position: relative;
+}
+.task-selected {
+  outline: 2px solid blue;
+}
+.today-highlight {
+  background: #2b8aff53;
+}
+.logout-btn {
+  background: linear-gradient(
+    to bottom,
+    var(--bg-top),
+    var(--bg-bottom)
+  ); /* blue background */
+  color: rgb(244, 236, 236); /* white text */
+  padding: 8px 16px; /* spacing */
+  border: #f4f4f4; /* no border */
+  border-radius: 8px; /* rounded corners */
+  cursor: pointer; /* pointer on hover */
+  font-size: 14px;
+}
+
+.logout-btn:hover {
+  background: var(--accent);
+}
+@keyframes bounceInvalid {
+  0% {
+    transform: translateX(0);
+    background-color: red;
+  }
+  25% {
+    transform: translateX(-6px);
+    background-color: red;
+  }
+  50% {
+    transform: translateX(6px);
+  }
+  75% {
+    transform: translateX(-4px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+td.bounce {
+  animation: bounceInvalid 0.3s ease;
+}
+.legend-container {
+  display: flex;
+  align-items: center;
+  gap: 15px; /* Space between legend items */
+  padding: 0 10px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px; /* Space between swatch and label */
+}
+.legend-swatch {
+  width: 14px;
+  height: 14px;
+  border: 1px solid #ccc;
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+.legend-label {
+  font-size: 12px;
+  color: #333;
+}
+
+/* --- Swatch-Specific Colors --- */
+.swatch-open {
+  background-color: #fdfbbe;
+}
+.swatch-closed {
+  background-color: #e7fafe;
+}
+.swatch-delay {
+  background-color: #fdfbbe; /* Open task */
+  border: 2px solid rgb(255, 0, 0); /* Delay border */
+}
+.swatch-advance {
+  background-color: #fdfbbe; /* Open task */
+  border: 2px solid rgb(2, 255, 2); /* Advance border */
+}
+.swatch-today {
+  background-color: #2b8aff53; /* Today highlight */
+}
+.swatch-sunday {
+  background-color: #fccc7869; /* Sunday highlight */
+}
+.history-line {
+  position: absolute;
+  top: 50%;
+  height: 2px;
+  width: 100%;
+  z-index: 1;
+  transform: translateY(-50%);
+  background-color: #cccccc; /* Light static gray */
+}
+.half-history-line {
+  position: absolute;
+  top: 50%;
+  height: 2px;
+  width: 50%;
+  transform: translateY(-50%);
+  background-color: #cccccc;
+}
+
+.half-history-line.right {
+  left: 50%;
+}
+.half-history-line.left {
+  left: 0;
+}
+.dot-history {
+  background-color: #cccccc; /* Matches the history-line color */
+}
+/* --- PRINT STYLES --- */
+@media print {
+  @page {
+    size: landscape;
+    margin: 5mm;
+  }
+  body {
+    padding: 0;
+    background: white;
+  }
+  /* Hide non-printable UI */
+  #controls,
+  .logout-btn,
+  .print-btn,
+  .modal,
+  #remarks-editor {
+    display: none !important;
+  }
+
+  /* Adjust Header for paper */
+  .plan-header {
+    position: relative !important;
+    background: none !important;
+    color: black !important;
+    border: none;
+    padding: 0;
+    margin-bottom: 10px;
+  }
+  .plan-heading {
+    color: black !important;
+    font-size: 20px;
+  }
+
+  /* Expand the container to fit all content (remove scroll) */
+  #matrix-container {
+    height: auto !important;
+    overflow: visible !important;
+    border: none;
+    width: 100%;
+  }
+
+  /* Remove Sticky positioning (causes glitches in PDF/Print) */
+  th,
+  tr.skill-row td,
+  table th:first-child,
+  table td:first-child {
+    position: static !important;
+  }
+
+  /* FORCE Background Colors (Chrome/Edge/Safari) */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+.print-btn {
+  background: #fff;
+  color: var(--bg-top); /* Lufthansa Blue text */
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-left: 10px; /* Space from Logout button */
+  font-weight: bold;
+}
+.print-btn:hover {
+  background: #e0e0e0;
+}
+.legend-label {
+  font-size: 12px;
+  color: #333;
+}
+.queue-item {
+  font-size: 13px;
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 4px 8px;
+  margin-bottom: 5px;
+  border-radius: 3px;
+  display: flex;
+  justify-content: space-between;
+}
+.queue-item span {
+  color: #555;
+}
+.skill-row {
+  border-top: 4px solid #000 !important; /* thick separator */
+}
+.task-dependency-indicator {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  font-size: 12px;
+  pointer-events: none;
+  opacity: 0.8;
+}
