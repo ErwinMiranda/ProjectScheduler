@@ -5,6 +5,7 @@ import {
   addDoc,
   serverTimestamp,
   deleteField,
+  getDoc,
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 import { db, tasksCol } from "./firebase.js";
@@ -30,6 +31,8 @@ const SKILL_ORDER = [
 ];
 const statusEl = document.getElementById("status-indicator");
 const woSelect = document.getElementById("wo-filter");
+// 🔥 Track close date PER TASK (for bulk closing)
+const taskActionDayMap = new Map();
 
 let skillDisplayOrder = []; // Order of skills based on click sequence
 let collapsedSkills = new Set(); // tracks which skills are hidden
@@ -155,6 +158,7 @@ function adaptProjSchedTask(t) {
     workorder: t.wo || "",
     status: t.status || "Open",
     remarks: t.remarks || "",
+    datesclosed: t.datesclosed || "",
     color: t.color || "",
     row: t.row || 0,
 
@@ -353,13 +357,11 @@ async function createTask(payload) {
 }
 
 async function closeTasks(taskIds, closingRemark, closeDateKey) {
-  console.log(`Closing ${taskIds.length} tasks on dayKey ${closeDateKey}...`);
-
   for (const id of taskIds) {
     const task = window.currentRows.find((r) => r._id === id);
     if (!task) continue;
 
-    // 🔥 NEW RULE: Do NOT allow closing if ANY parent is still open
+    // 🔥 Do NOT allow closing if ANY parent is still open
     if (Array.isArray(task.dependencies) && task.dependencies.length > 0) {
       const parents = task.dependencies
         .map((pid) => window.currentRows.find((t) => t._id === pid))
@@ -379,46 +381,81 @@ async function closeTasks(taskIds, closingRemark, closeDateKey) {
             `The following parent tasks are still OPEN:\n` +
             parentNames,
         );
-
-        continue; // ⛔ Skip closing this task
+        continue;
       }
     }
 
-    const revS = parseDateField(task.rev_sdate ?? task.start);
-    const revE = parseDateField(task.rev_edate ?? task.end);
+    const resolvedStatus = resolveStatusOnClose(task, closeDateKey);
 
-    const startKey = revS
-      ? toSerialDayKey(revS)
-      : toSerialDayKey(parseDateField(task.start));
-    if (isNaN(startKey)) {
-      console.error(`Skipping ${id}, invalid start date.`);
+    /* ============================
+       📐 REVISED DATE ADJUSTMENT
+       (COMPARE AGAINST START)
+    ============================ */
+
+    const planStartDate = parseDateField(task.start);
+    const revStartDate = parseDateField(task.rev_sdate ?? task.start);
+    const revEndDate = parseDateField(task.rev_edate ?? task.end);
+
+    let newRevS = null;
+    let newRevE = null;
+
+    if (planStartDate && revStartDate && revEndDate) {
+      const planStartKey = toSerialDayKey(planStartDate);
+      const revStartKey = toSerialDayKey(revStartDate);
+      const revEndKey = toSerialDayKey(revEndDate);
+
+      // 🔥 COMPARE USING PLANNED START
+      if (planStartKey !== closeDateKey) {
+        const diff = closeDateKey - planStartKey;
+
+        newRevS = dayKeyToISO(revStartKey + diff);
+        newRevE = dayKeyToISO(revEndKey + diff);
+      }
+    }
+
+    /* ============================
+       📅 datesclosed logic
+    ============================ */
+
+    const closedDateISO = dayKeyToISO(closeDateKey);
+
+    const ref = doc(db, "tasks", task._id);
+    const snap = await getDoc(ref);
+
+    let existingDates = "";
+    if (snap.exists()) {
+      existingDates = snap.data().datesclosed || "";
+    }
+
+    const datesArray = existingDates
+      ? existingDates.split(",").map((d) => d.trim())
+      : [];
+
+    if (datesArray.includes(closedDateISO)) {
       continue;
     }
 
-    const duration = revE ? toSerialDayKey(revE) - startKey : 0;
-    const resolvedStatus = resolveStatusOnClose(task, closeDateKey);
+    const datesClosedValue = datesArray.length
+      ? `${existingDates}, ${closedDateISO}`
+      : closedDateISO;
+
+    /* ============================
+       📦 FINAL UPDATE
+    ============================ */
 
     const updatePayload = {
       status: resolvedStatus,
       remarks: closingRemark,
+      datesclosed: datesClosedValue,
     };
 
-    // 🔒 ONLY adjust dates IF task is truly closed AND closed on end day
-    if (resolvedStatus === "Closed") {
-      // keep dates as-is OR optionally clamp end date
-      // (do nothing is safest)
+    // Only apply revised shift if needed
+    if (newRevS && newRevE) {
+      updatePayload.rev_sdate = newRevS;
+      updatePayload.rev_edate = newRevE;
     }
 
     await updateTask(task._id, updatePayload);
-  }
-  console.log("Finished closing tasks.");
-}
-
-async function deleteTask(id) {
-  try {
-    await deleteDoc(doc(db, "tasks", id));
-  } catch (err) {
-    console.error("deleteTask err", err);
   }
 }
 
@@ -877,7 +914,7 @@ function updateSkillButtonStyle(btn) {
   }
 }
 
-function insertTaskToRow(rowTds, task, usedDatesSet, dayKeys) {
+function insertTaskToRow(rowTds, task, usedDatesSet, dayKeys, dayKey) {
   // --- 1. Define all date keys ---
   const isCritical = window.criticalPathIds?.includes(task._id);
   const origSKey = task._orig_sdate ? toSerialDayKey(task._orig_sdate) : null;
@@ -1002,12 +1039,29 @@ function insertTaskToRow(rowTds, task, usedDatesSet, dayKeys) {
 
       const status = (task.status || "").toLowerCase();
 
+      // ✅ Convert datesclosed string → array
+      const datesClosedArray = task.datesclosed
+        ? task.datesclosed.split(",").map((d) => d.trim())
+        : [];
+
+      // ✅ matrix date (ISO format)
+      const matrixDateISO = dayKeyToISO(dk); // or however you already compute it
+
+      const isClosedOnMatrixDate = datesClosedArray.includes(matrixDateISO);
+
       if (status === "closed") {
         // ✅ Closed = light blue
         taskDiv.style.backgroundColor = "#E7FAFE";
         taskDiv.style.color = "black";
+      } else if (
+        (status === "in progress" || status === "inprogress") &&
+        isClosedOnMatrixDate
+      ) {
+        // 🔴 In Progress BUT closed on this matrix date
+        taskDiv.style.backgroundColor = "#E7FAFE";
+        taskDiv.style.color = "black";
       } else if (status === "in progress" || status === "inprogress") {
-        // 🟧 In Progress = amber
+        // 🟧 Normal In Progress
         taskDiv.style.backgroundColor = "#fcb740"; // amber
         taskDiv.style.color = "black";
       } else {
@@ -1146,11 +1200,20 @@ function insertTaskToRow(rowTds, task, usedDatesSet, dayKeys) {
 
       td.appendChild(taskDiv);
       // 📌 Capture matrix day whenever user interacts with the task
-      taskDiv.addEventListener("mousedown", (e) => {
+      taskDiv.addEventListener("mousedown", () => {
         const td = taskDiv.closest("td");
         if (!td?.dataset?.day) return;
 
-        actionDayKey = Number(td.dataset.day);
+        const dayKey = Number(td.dataset.day);
+        const taskId = taskDiv.dataset.taskId;
+
+        // single-task close reference
+        actionDayKey = dayKey;
+
+        // bulk-close per-task date tracking
+        if (taskId) {
+          taskActionDayMap.set(taskId, dayKey);
+        }
       });
     }
   });
@@ -1244,7 +1307,13 @@ function attachDropHandlersToTd(td) {
 
     // Get original start date of dragged task
     const revS = parseDateField(draggedTask.rev_sdate ?? draggedTask.start);
-    const startKey = toSerialDayKey(revS || parseDateField(draggedTask.start));
+    //const startKey = toSerialDayKey(revS || parseDateField(draggedTask.start));
+    // Use the date column where the task was picked
+    const startKey =
+      taskActionDayMap.get(tid) ??
+      toSerialDayKey(
+        parseDateField(draggedTask.rev_sdate ?? draggedTask.start),
+      );
 
     // COMPUTE DAY SHIFT FIRST ✔️
     const dayShift = dayKey - startKey;
@@ -1288,6 +1357,7 @@ function attachDropHandlersToTd(td) {
     }
 
     // APPLY MOVE (only if passed validation) ✔️
+    // APPLY MOVE (only if passed validation) ✔️
     for (const id of selectedTaskIds) {
       const task = taskMap[id];
       if (!task) continue;
@@ -1298,12 +1368,19 @@ function attachDropHandlersToTd(td) {
       const curEnd = toSerialDayKey(parseDateField(task.rev_edate ?? task.end));
       const duration = curEnd - curStart;
 
-      const newStartISO = dayKeyToISO(curStart + dayShift);
-      const newEndISO = dayKeyToISO(curStart + dayShift + duration);
+      const newStartKey = curStart + dayShift;
+      const newEndKey = newStartKey + duration;
+
+      const newStartISO = dayKeyToISO(newStartKey);
+      const newEndISO = dayKeyToISO(newEndKey);
+
+      // 🔥 SHIFT ENTIRE datesclosed HISTORY
+      const newDatesClosed = shiftDatesClosed(task.datesclosed, dayShift);
 
       await updateTask(task._id, {
         rev_sdate: newStartISO,
         rev_edate: newEndISO,
+        datesclosed: newDatesClosed,
       });
 
       cascadeVisited.clear();
@@ -1433,19 +1510,31 @@ document
   .getElementById("remarks-close-task")
   .addEventListener("click", async () => {
     const remarksText = remarksTextarea.value.trim();
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const todayKey = toSerialDayKey(yesterday);
 
+    // Must have at least one matrix date
+    if (!actionDayKey && taskActionDayMap.size === 0) {
+      alert("Please click a date cell in the matrix before closing.");
+      return;
+    }
+
+    /* =========================
+       BULK CLOSING MODE
+    ========================== */
     if (bulkClosingMode) {
       for (const id of selectedTaskIds) {
         const task = window.currentRows.find((r) => r._id === id);
         if (!task) continue;
 
-        const revS = parseDateField(task.rev_sdate ?? task.start);
+        // ✅ PER-TASK DATE (fallback to last clicked)
+        const closeDateKey = taskActionDayMap.get(id) ?? actionDayKey;
 
-        // ⛔ NEW CHECK: Prevent closing a child while parent is open
-        if (task.dependencies && task.dependencies.length > 0) {
+        if (!closeDateKey) {
+          alert(`No date selected for "${task.tasktitle}"`);
+          continue;
+        }
+
+        // ⛔ Parent check
+        if (task.dependencies?.length) {
           const parents = task.dependencies
             .map((pid) => window.currentRows.find((r) => r._id === pid))
             .filter(Boolean);
@@ -1454,97 +1543,97 @@ document
             (p) => !p.status || p.status.toLowerCase() !== "closed",
           );
 
-          if (openParents.length > 0) {
-            const names = openParents
-              .map((p) => p.tasktitle || p._id)
-              .join(", ");
-
+          if (openParents.length) {
             alert(
-              `❌ Cannot close "${task.tasktitle}".\n` +
-                `It has parent tasks still open:\n${names}`,
+              `❌ Cannot close "${task.tasktitle}".\nParent tasks still open.`,
             );
-            // Close editor
-            remarksEditor.style.display = "none";
-            remarksEditingTaskId = null;
-            return; // STOP CLOSING
+            return;
           }
         }
 
-        const revE = parseDateField(task.rev_edate ?? task.end);
-        const startKey = revS
-          ? toSerialDayKey(revS)
-          : toSerialDayKey(parseDateField(task.start));
-        const duration = revE ? toSerialDayKey(revE) - startKey : 0;
+        const resolvedStatus = resolveStatusOnClose(task, closeDateKey);
+        const closedDateISO = dayKeyToISO(closeDateKey);
 
-        const updatePayload = {
+        const ref = doc(db, "tasks", task._id);
+        const snap = await getDoc(ref);
+
+        const existingDates = snap.exists()
+          ? snap.data().datesclosed || ""
+          : "";
+
+        const datesArray = existingDates
+          ? existingDates.split(",").map((d) => d.trim())
+          : [];
+
+        if (datesArray.includes(closedDateISO)) continue;
+
+        const datesClosedValue = datesArray.length
+          ? `${existingDates}, ${closedDateISO}`
+          : closedDateISO;
+
+        await updateTask(task._id, {
           status: resolvedStatus,
-          remarks: closingRemark,
-        };
-
-        // 🔒 ONLY adjust dates IF task is truly closed AND closed on end day
-        if (resolvedStatus === "Closed") {
-          // keep dates as-is OR optionally clamp end date
-          // (do nothing is safest)
-        }
-
-        await updateTask(task._id, updatePayload);
+          remarks: remarksText,
+          datesclosed: datesClosedValue,
+        });
       }
 
-      // Clear selection after closing
-      document
-        .querySelectorAll(".task-selected")
-        .forEach((el) => el.classList.remove("task-selected"));
-      selectedTaskIds = [];
+      clearSelection();
       bulkClosingMode = false;
+      taskActionDayMap.clear();
+      actionDayKey = null;
+      remarksEditor.style.display = "none";
+      remarksEditingTaskId = null;
     } else if (remarksEditingTaskId) {
+      /* =========================
+       SINGLE TASK CLOSING
+    ========================== */
       const task = window.currentRows.find(
         (r) => r._id === remarksEditingTaskId,
       );
       if (!task) return;
 
-      // ⛔ NEW CHECK: Prevent closing a child while parent is open
-      if (task.dependencies && task.dependencies.length > 0) {
-        const parents = task.dependencies
-          .map((pid) => window.currentRows.find((r) => r._id === pid))
-          .filter(Boolean);
-
-        const openParents = parents.filter(
-          (p) => !p.status || p.status.toLowerCase() !== "closed",
-        );
-
-        if (openParents.length > 0) {
-          const names = openParents.map((p) => p.tasktitle || p._id).join(", ");
-
-          alert(
-            `❌ Cannot close "${task.tasktitle}".\n` +
-              `It has parent tasks still open:\n${names}`,
-          );
-          // Close editor
-          remarksEditor.style.display = "none";
-          remarksEditingTaskId = null;
-          return; // STOP CLOSING ❗
-        }
+      if (!actionDayKey) {
+        alert("Please click a date cell in the matrix before closing.");
+        return;
       }
 
-      const resolvedStatus = resolveStatusOnClose(task, actionDayKey);
+      const closeDateKey = actionDayKey;
+      const resolvedStatus = resolveStatusOnClose(task, closeDateKey);
+      const closedDateISO = dayKeyToISO(closeDateKey);
 
-      const updatePayload = {
+      const ref = doc(db, "tasks", task._id);
+      const snap = await getDoc(ref);
+
+      const existingDates = snap.exists() ? snap.data().datesclosed || "" : "";
+
+      const datesArray = existingDates
+        ? existingDates.split(",").map((d) => d.trim())
+        : [];
+
+      if (datesArray.includes(closedDateISO)) {
+        remarksEditor.style.display = "none";
+        remarksEditingTaskId = null;
+        return;
+      }
+
+      const datesClosedValue = datesArray.length
+        ? `${existingDates}, ${closedDateISO}`
+        : closedDateISO;
+
+      await updateTask(task._id, {
         status: resolvedStatus,
         remarks: remarksText,
-      };
+        datesclosed: datesClosedValue,
+      });
 
-      // 🔒 ONLY adjust dates IF task is truly closed AND closed on end day
-      if (resolvedStatus === "Closed") {
-        // keep dates as-is OR optionally clamp end date
-        // (do nothing is safest)
-      }
-
-      await updateTask(task._id, updatePayload);
+      remarksEditor.style.display = "none";
+      remarksEditingTaskId = null;
+      actionDayKey = null;
+      clearSelection();
+      bulkClosingMode = false;
+      taskActionDayMap.clear();
     }
-
-    // Close editor
-    remarksEditor.style.display = "none";
-    remarksEditingTaskId = null;
   });
 
 ///new***********************
@@ -1678,6 +1767,9 @@ document
       status: f.statusClosed.checked ? "Closed" : "open",
       workorder: f.workorder.value || undefined,
     };
+    if (payload.status.toLowerCase() === "open") {
+      payload.datesclosed = "";
+    }
 
     // ⛔ MUST RUN BEFORE any updateTask()
     // ---------------------------------------
@@ -1748,28 +1840,6 @@ bulkEditDetails.addEventListener("click", () => {
 });
 
 // "Confirm Close" button logic (this is your existing logic)
-bulkCloseConfirm.addEventListener("click", async () => {
-  const dateStr = bulkActionDate.value;
-  const closingRemark = bulkActionRemarks.value;
-
-  if (!dateStr) {
-    alert("Please select an Action Date.");
-    return;
-  }
-
-  const closeDate = parseDateField(dateStr);
-  if (!closeDate || isNaN(closeDate.getTime())) {
-    alert("Invalid date format.");
-    return;
-  }
-  const closeDateKey = toSerialDayKey(closeDate);
-
-  await closeTasks(selectedTaskIds, closingRemark, closeDateKey);
-
-  bulkActionModal.style.display = "none";
-  clearSelection();
-  bulkActionAnchorTaskId = null;
-});
 
 async function performRelativeMove(isNewPlan = false) {
   const dateStr = bulkActionDate.value;
@@ -1832,17 +1902,19 @@ async function performRelativeMove(isNewPlan = false) {
         rev_sdate: newS_ISO,
         rev_edate: newE_ISO,
         remarks: remarks,
-        status: "open",
+        //status: "open",
       };
 
       // THIS IS THE KEY LOGIC
       if (isNewPlan) {
         // "New Plan" button: Erase history
         updatePayload.orig_sdate = null;
+        updatePayload.status = task.status;
       } else {
         // "Replan" button: Create history if it doesn't exist
         if (!task.orig_sdate && task.start) {
           updatePayload.orig_sdate = task.start;
+          updatePayload.status = task.status;
         }
       }
       // --- End Payload ---
@@ -1887,10 +1959,6 @@ async function addTasksToCurrentWO(newTasks) {
       ? window.currentAcregs[0]
       : "";
 
-  console.log(
-    `Adding ${newTasks.length} tasks to WO: ${currentWO} (AC: ${currentAC})...`,
-  );
-
   // 4. Loop and Create
   for (const task of newTasks) {
     try {
@@ -1916,8 +1984,6 @@ async function addTasksToCurrentWO(newTasks) {
       console.error(`Failed to add task "${task.title}":`, err);
     }
   }
-
-  console.log("Batch add complete.");
 }
 // This array will hold the tasks before we save them
 let taskQueue = [];
@@ -2699,6 +2765,7 @@ document.addEventListener("keydown", async (e) => {
     for (const id of closedOnly) {
       await updateTask(id, {
         status: "open",
+        datesclosed: "",
         // keep dates unchanged
       });
     }
@@ -2782,4 +2849,18 @@ export function renderSkillToolbar(skills) {
 
     bar.appendChild(btn);
   });
+}
+function shiftDatesClosed(datesclosed, dayShift) {
+  if (!datesclosed || !dayShift) return datesclosed;
+
+  const shifted = datesclosed
+    .split(",")
+    .map((d) => d.trim())
+    .filter(Boolean)
+    .map((iso) => {
+      const key = toSerialDayKey(parseDateField(iso));
+      return dayKeyToISO(key + dayShift);
+    });
+
+  return shifted.join(", ");
 }
