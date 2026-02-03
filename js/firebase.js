@@ -138,6 +138,7 @@ export function listenTasksByWO(wo, callback) {
         title: data.title || "",
         start: new Date(data.start),
         end: new Date(data.end),
+        datesclosed: data.datesclosed || "",
         rev_sdate: data.rev_sdate ? new Date(data.rev_sdate) : null,
         rev_edate: data.rev_edate ? new Date(data.rev_edate) : null,
         orig_sdate: data.orig_sdate ? new Date(data.orig_sdate) : null,
@@ -179,6 +180,7 @@ export async function fetchTasksByWOOnce(wo) {
       title: data.title || "",
       start: new Date(data.start),
       end: new Date(data.end),
+      datesclosed: data.datesclosed || "",
       rev_sdate: data.rev_sdate ? new Date(data.rev_sdate) : null,
       rev_edate: data.rev_edate ? new Date(data.rev_edate) : null,
 
