@@ -29,8 +29,13 @@ const SKILL_ORDER = [
   "ENG/CRG",
   "FLC/LDG",
 ];
+const params = new URLSearchParams(window.location.search);
+const passedWO = params.get("wo");
+
 const statusEl = document.getElementById("status-indicator");
 const woSelect = document.getElementById("wo-filter");
+const woSearchBtn = document.getElementById("wo-search");
+
 // 🔥 Track close date PER TASK (for bulk closing)
 const taskActionDayMap = new Map();
 
@@ -70,6 +75,12 @@ function resolveStatusOnClose(task, actionDayKey) {
 
   // Otherwise → still ongoing
   return "InProgress";
+}
+function dateToISO(dateObj) {
+  const yyyy = dateObj.getFullYear();
+  const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const dd = String(dateObj.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function excelSerialToDate(serial) {
@@ -213,10 +224,40 @@ async function loadWOList() {
     woSelect.appendChild(opt);
   });
 
-  // restore saved value
+  // 🔥 IF WO IS PASSED FROM MAIN APP
+  if (passedWO) {
+    woSelect.value = passedWO;
+    woSelect.disabled = true;
+    woSearchBtn.disabled = true;
+
+    woSelect.style.opacity = "0.6";
+    woSearchBtn.style.opacity = "0.6";
+
+    // 🚀 Auto-load immediately
+    await loadWOProgrammatically(passedWO);
+    return;
+  }
+
+  // normal restore behavior
   if (woFilterValue) {
     woSelect.value = woFilterValue;
   }
+}
+
+async function loadWOProgrammatically(wo) {
+  woFilterValue = wo.toLowerCase();
+  localStorage.setItem("woFilterValue", woFilterValue);
+
+  statusEl.textContent = "Firestore: loading…";
+
+  const rawTasks = await fetchTasksByWOOnce(wo);
+  window.currentRows = rawTasks.flatMap(adaptProjSchedTask);
+
+  statusEl.textContent = `Firestore: loaded ${window.currentRows.length} tasks`;
+
+  ensureTimelineRange(true);
+  applyWOfilterAndRender();
+  enableRealtime(wo);
 }
 
 loadWOList();
@@ -253,6 +294,8 @@ if (savedValue) {
 }
 
 document.getElementById("wo-search").addEventListener("click", async () => {
+  if (passedWO) return; // ⛔ Block manual search when WO is locked
+
   const wo = woSelect.value;
   if (!wo) return;
 
@@ -262,7 +305,6 @@ document.getElementById("wo-search").addEventListener("click", async () => {
   statusEl.textContent = "Firestore: loading…";
 
   const rawTasks = await fetchTasksByWOOnce(wo);
-
   window.currentRows = rawTasks.flatMap(adaptProjSchedTask);
 
   statusEl.textContent = `Firestore: loaded ${window.currentRows.length} tasks`;
@@ -2137,24 +2179,27 @@ function addTaskToQueueDefault() {
 
 // 1. Open the batch modal
 openBatchAddBtn.addEventListener("click", () => {
-  // Check if a WO is selected
-  if (!woFilterValue || woFilterValue === "") {
-    alert("Please select a Work Order from the dropdown first.");
+  // 🛑 Must have a WO loaded
+  if (!woFilterValue) {
+    alert("Please select a Work Order first.");
     return;
   }
-  userHasManuallySetEndDate = false;
-  taskQueue = []; // Clear the queue
-  renderTaskQueue(); // Re-draw the empty list
 
-  // Set default date to today
-  const todayISO = dayKeyToISO(toSerialDayKey(new Date()));
-  b.start.value = todayISO;
-  b.end.value = todayISO;
-  b.title.value = "";
-  b.skill.value = "";
+  // 🔥 Use WO plan start date, NOT today
+  if (window.minDate) {
+    const iso = dateToISO(window.minDate);
+    b.start.value = iso;
+    b.end.value = iso;
+    userHasManuallySetEndDate = false; // reset linkage
+  } else {
+    // Fallback (should rarely happen)
+    const today = new Date();
+    const iso = dateToISO(today);
+    b.start.value = iso;
+    b.end.value = iso;
+  }
 
   batchAddModal.style.display = "flex";
-  b.title.focus();
 });
 
 // 2. Add a single task to the queue
