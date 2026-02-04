@@ -66,7 +66,11 @@ export async function saveTask(task) {
     end: task.end.toISOString(),
     rev_sdate: task.start.toISOString(),
     rev_edate: task.end.toISOString(),
-    status: task.status || "Open", // ✅ Added
+    status: task.status || "Open",
+    datesclosed:
+      String(task.status || "").toLowerCase() === "closed"
+        ? buildDatesClosed(task.start, task.end)
+        : "",
     skill: data.skill || "",
     remarks: data.remarks || "",
     depends: task.depends || "",
@@ -99,6 +103,7 @@ export function listenTasksByWO(wo, callback) {
         rev_sdate: new Date(data.start),
         rev_edate: new Date(data.end),
         status: data.status || "Open", // ✅ Added
+        datesclosed: data.datesclosed || "",
         skill: data.skill || "",
         remarks: data.remarks || "",
         depends: data.depends || "",
@@ -137,6 +142,7 @@ export async function fetchTasksByWOOnce(wo) {
         data.duration ||
         Math.round((new Date(data.end) - new Date(data.start)) / 86400000) + 1,
       status: data.status || "Open",
+      datesclosed: data.datesclosed || "",
       skill: data.skill || "",
       remarks: data.remarks || "",
       depends: data.depends || "",
@@ -192,6 +198,12 @@ export async function batchSaveTasks(taskArray) {
           ? t.end.toISOString()
           : new Date(t.end).toISOString(),
       duration,
+
+      datesclosed:
+        String(t.status || "").toLowerCase() === "closed"
+          ? buildDatesClosed(t.start, t.end)
+          : "", // ✅ CLEAR when Open / In Progress
+
       status: t.status || "Open",
       skill: t.skill || "",
       remarks: t.remarks || "",
@@ -277,4 +289,25 @@ export async function deleteTaskFromFirestore(taskId) {
   if (!taskId) return;
   const ref = doc(db, "tasks", taskId);
   await deleteDoc(ref);
+}
+function buildDatesClosed(start, end) {
+  const dates = [];
+  const cur = new Date(start);
+  const last = new Date(end);
+
+  // normalize to LOCAL midnight
+  cur.setHours(0, 0, 0, 0);
+  last.setHours(0, 0, 0, 0);
+
+  while (cur <= last) {
+    const yyyy = cur.getFullYear();
+    const mm = String(cur.getMonth() + 1).padStart(2, "0");
+    const dd = String(cur.getDate()).padStart(2, "0");
+
+    dates.push(`${yyyy}-${mm}-${dd}`);
+
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  return dates.join(", ");
 }
