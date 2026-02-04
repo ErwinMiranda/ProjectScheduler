@@ -3,6 +3,7 @@
 import {
   fetchUniqueWOList,
   fetchTasksByWOOnce,
+  listenTasksByWO,
   batchSaveTasks,
   saveTemplateToFirestore,
   loadAllTemplates,
@@ -43,6 +44,7 @@ const depOverlay = document.getElementById("depOverlay");
 const newDepends = document.getElementById("newDepends");
 const headerControls = document.querySelector(".header-controls");
 const last = localStorage.getItem("selectedWO");
+let unsubscribeTasks = null;
 let currentWO = null;
 let unsavedChanges = false;
 const btnMilestone = document.getElementById("btnMilestone");
@@ -55,7 +57,7 @@ document.getElementById("btnMilestone").addEventListener("click", () => {
     return;
   }
 
-  const url = `milestone?wo=${encodeURIComponent(wo)}`;
+  const url = `milestone.html?wo=${encodeURIComponent(wo)}`;
   window.open(url, "_blank");
 });
 
@@ -320,21 +322,26 @@ export function refresh() {
 /* ============================================================
    WO CHANGE
 ============================================================ */
-woFilter.onchange = async (e) => {
+woFilter.onchange = (e) => {
   currentWO = e.target.value;
   updateAcRegFromWO(currentWO);
   localStorage.setItem("selectedWO", currentWO);
 
   if (!currentWO) return;
 
-  const list = await fetchTasksByWOOnce(currentWO);
-  updateTaskList(list);
-  commitBaselineFromFirestore(list);
+  // 🔥 stop previous listener
+  if (unsubscribeTasks) unsubscribeTasks();
 
-  applyDependencies();
-  refresh();
+  // 🔥 realtime listener
+  unsubscribeTasks = listenTasksByWO(currentWO, (list) => {
+    updateTaskList(list);
+    commitBaselineFromFirestore(list);
 
-  setUnsaved(false);
+    applyDependencies();
+    refresh();
+
+    setUnsaved(false);
+  });
 };
 
 /* ============================================================
@@ -467,11 +474,17 @@ if (last) {
   currentWO = last;
   updateAcRegFromWO(last);
 
-  const list = await fetchTasksByWOOnce(last);
-  updateTaskList(list);
-  commitBaselineFromFirestore(list);
-  applyDependencies();
-  refresh();
+  if (unsubscribeTasks) unsubscribeTasks();
+
+  unsubscribeTasks = listenTasksByWO(last, (list) => {
+    updateTaskList(list);
+    commitBaselineFromFirestore(list);
+
+    applyDependencies();
+    refresh();
+
+    setUnsaved(false);
+  });
 } else {
   refresh();
 }
