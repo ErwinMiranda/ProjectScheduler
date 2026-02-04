@@ -47,11 +47,18 @@ let currentWO = null;
 let unsavedChanges = false;
 const btnMilestone = document.getElementById("btnMilestone");
 
-if (btnMilestone) {
-  btnMilestone.addEventListener("click", () => {
-    window.open("milestone", "_blank");
-  });
-}
+document.getElementById("btnMilestone").addEventListener("click", () => {
+  const wo = document.getElementById("woFilter").value;
+
+  if (!wo) {
+    alert("Please select a Work Order first.");
+    return;
+  }
+
+  const url = `milestone?wo=${encodeURIComponent(wo)}`;
+  window.open(url, "_blank");
+});
+
 /* ============================================================
    SAVE / DISCARD CONTROLS
 ============================================================ */
