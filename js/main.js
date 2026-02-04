@@ -53,6 +53,31 @@ let actionDayKey = null;
 
 // ---------- helpers for date parsing ----------
 // New helper function to draw the gray history line
+function canCloseOnDay(task, closeDateKey) {
+  const revStartDate = parseDateField(task.rev_sdate ?? task.start);
+  if (!revStartDate) return true;
+
+  const startKey = toSerialDayKey(revStartDate);
+
+  const closedKeys = task.datesclosed
+    ? task.datesclosed
+        .split(",")
+        .map((d) => d.trim())
+        .map((d) => toSerialDayKey(new Date(d)))
+    : [];
+
+  const closedSet = new Set(closedKeys);
+
+  // 🔥 Check PRECEDING days (forward-only rule)
+  for (let d = startKey; d < closeDateKey; d++) {
+    if (!closedSet.has(d)) {
+      return false; // ⛔ earlier open day found
+    }
+  }
+
+  return true;
+}
+
 function resolveStatusOnClose(task, actionDayKey) {
   const startDate = parseDateField(task.rev_sdate ?? task.start);
   const endDate = parseDateField(task.rev_edate ?? task.end);
@@ -824,9 +849,9 @@ function buildMatrixTable(rows) {
 
   // --- NEW cumulative logic (skill-filtered) ---
   const totalsPerDay = {}; // tasks covering each day
-  const closedFinishDay = {}; // closed tasks finishing on each day
+  //const closedFinishDay = {}; // closed tasks finishing on each day
+  const closedPerDay = {}; // ✅ closed per matrix day
 
-  // 1. Collect totals ONLY from visible skills
   normalized
     .filter((task) => visibleSkills.has(task.skill || "Unassigned"))
     .forEach((task) => {
@@ -834,14 +859,21 @@ function buildMatrixTable(rows) {
       const re = task._rev_edate ? toSerialDayKey(task._rev_edate) : null;
       if (rs === null || re === null) return;
 
-      // Count tasks covering each day
+      // 1️⃣ Total coverage
       for (let d = rs; d <= re; d++) {
         totalsPerDay[d] = (totalsPerDay[d] || 0) + 1;
       }
 
-      // Count closed tasks only once on their end day
-      if ((task.status || "").toLowerCase() === "closed") {
-        closedFinishDay[re] = (closedFinishDay[re] || 0) + 1;
+      // 2️⃣ Closed coverage (VISUAL TRUTH)
+      if (task.datesclosed) {
+        const closedKeys = task.datesclosed
+          .split(",")
+          .map((d) => d.trim())
+          .map((d) => toSerialDayKey(new Date(d)));
+
+        closedKeys.forEach((dk) => {
+          closedPerDay[dk] = (closedPerDay[dk] || 0) + 1;
+        });
       }
     });
 
@@ -851,7 +883,7 @@ function buildMatrixTable(rows) {
 
   dayKeys.forEach((dk) => {
     runningTotal += totalsPerDay[dk] || 0;
-    runningClosed += closedFinishDay[dk] || 0;
+    runningClosed += closedPerDay[dk] || 0;
 
     const td = document.createElement("td");
     td.textContent = `${runningClosed} / ${runningTotal}`;
@@ -1589,8 +1621,18 @@ document
             alert(
               `❌ Cannot close "${task.tasktitle}".\nParent tasks still open.`,
             );
+            remarksEditor.style.display = "none";
             return;
           }
+        }
+        // ⛔ Succeeding-day check (NO gaps allowed)
+        if (!canCloseOnDay(task, closeDateKey)) {
+          alert(
+            `❌ Cannot close "${task.tasktitle}" on this date.\n` +
+              `Please close succeeding day(s) first.`,
+          );
+          remarksEditor.style.display = "none";
+          return; // ⛔ stop bulk closing
         }
 
         const resolvedStatus = resolveStatusOnClose(task, closeDateKey);
@@ -1641,6 +1683,16 @@ document
       }
 
       const closeDateKey = actionDayKey;
+      // ⛔ Succeeding-day check (NO gaps allowed)
+      if (!canCloseOnDay(task, closeDateKey)) {
+        alert(
+          `❌ Cannot close "${task.tasktitle}" on this date.\n` +
+            `You must close the later day(s) first.`,
+        );
+        remarksEditor.style.display = "none";
+        return;
+      }
+
       const resolvedStatus = resolveStatusOnClose(task, closeDateKey);
       const closedDateISO = dayKeyToISO(closeDateKey);
 
