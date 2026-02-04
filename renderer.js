@@ -18,9 +18,25 @@ import { computeCriticalPath, toDateInput } from "./utils.js";
 import { deleteTask, insertTaskBelow } from "./app.js";
 let scale = 36;
 
+function isDayClosed(task, date) {
+  if (!task.datesclosed) return false;
+
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+
+  const iso = `${yyyy}-${mm}-${dd}`;
+
+  return task.datesclosed
+    .split(",")
+    .map((d) => d.trim())
+    .includes(iso);
+}
+
 /* --------------------------------------------------------------------------
    Persistent bottom-right tooltip (Dark Mode)
 ----------------------------------------------------------------------------*/
+
 function ensureTooltip() {
   let tip = document.querySelector(".bar-tooltip--fixed");
   if (tip) return tip;
@@ -814,8 +830,9 @@ function buildRows(
     const bar = document.createElement("div");
     bar.className = "bar";
     const statusColor = STATUS_COLORS[task.status] || STATUS_COLORS["Open"];
-    bar.style.backgroundColor = statusColor;
-    bar.style.borderColor = statusColor;
+    bar.style.background = "none";
+    bar.style.display = "flex";
+    bar.style.overflow = "hidden";
     if (task.status === "Hold") {
       bar.style.backgroundImage =
         "repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.2) 5px, rgba(255,255,255,0.2) 10px)";
@@ -827,7 +844,45 @@ function buildRows(
     bar.style.left = leftDays * scale + "px";
     bar.style.width = span * scale + "px";
     bar.style.height = barH + "px";
-    bar.innerHTML = `<div class="handle left"></div><div class="handle right"></div>`;
+    bar.innerHTML = ""; // clear first
+
+    // --- ADD LEFT HANDLE ---
+    const leftHandle = document.createElement("div");
+    leftHandle.className = "handle left";
+    bar.appendChild(leftHandle);
+
+    // --- BUILD PER-DAY SEGMENTS ---
+    const start = new Date(task.start);
+    const end = new Date(task.end);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+
+    const dayCount = daysBetween(start, end) + 1;
+
+    for (let i = 0; i < dayCount; i++) {
+      const day = new Date(start);
+      day.setDate(start.getDate() + i);
+
+      const seg = document.createElement("div");
+      seg.style.width = scale + "px"; // 🔥 EXACT DAY WIDTH
+      seg.style.height = "100%";
+      seg.style.flexShrink = "0"; // 🔥 DO NOT SHRINK
+
+      if (isDayClosed(task, day)) {
+        seg.style.backgroundColor = STATUS_COLORS.Closed;
+      } else if (String(task.status).toLowerCase() === "inprogress") {
+        seg.style.backgroundColor = STATUS_COLORS.InProgress; // 🟧
+      } else {
+        seg.style.backgroundColor = STATUS_COLORS.Open;
+      }
+
+      bar.appendChild(seg);
+    }
+
+    // --- ADD RIGHT HANDLE ---
+    const rightHandle = document.createElement("div");
+    rightHandle.className = "handle right";
+    bar.appendChild(rightHandle);
 
     if (selectedBars.has(task.id)) bar.classList.add("selected");
     if (showCriticalPath && criticalSet && criticalSet.has(task.id)) {
